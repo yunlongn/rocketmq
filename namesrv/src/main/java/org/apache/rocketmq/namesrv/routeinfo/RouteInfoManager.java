@@ -385,6 +385,7 @@ public class RouteInfoManager {
     }
 
     public TopicRouteData pickupTopicRouteData(final String topic) {
+        // 初始化返回数据topicRouteData
         TopicRouteData topicRouteData = new TopicRouteData();
         boolean foundQueueData = false;
         boolean foundBrokerData = false;
@@ -397,18 +398,23 @@ public class RouteInfoManager {
 
         try {
             try {
+                // 加读锁
                 this.lock.readLock().lockInterruptibly();
+                //先获取主题对应的队列信息
                 List<QueueData> queueDataList = this.topicQueueTable.get(topic);
                 if (queueDataList != null) {
+                    // 把队列信息返回值
                     topicRouteData.setQueueDatas(queueDataList);
                     foundQueueData = true;
 
+                    // 遍历队列，找出相关的所有BrokerName
                     Iterator<QueueData> it = queueDataList.iterator();
                     while (it.hasNext()) {
                         QueueData qd = it.next();
                         brokerNameSet.add(qd.getBrokerName());
                     }
 
+                    // 遍历这些BrokerName，找到对应的BrokerData，并写入返回结果中
                     for (String brokerName : brokerNameSet) {
                         BrokerData brokerData = this.brokerAddrTable.get(brokerName);
                         if (null != brokerData) {
@@ -424,6 +430,7 @@ public class RouteInfoManager {
                     }
                 }
             } finally {
+                // 释放读锁
                 this.lock.readLock().unlock();
             }
         } catch (Exception e) {

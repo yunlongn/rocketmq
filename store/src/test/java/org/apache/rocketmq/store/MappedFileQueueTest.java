@@ -49,6 +49,7 @@ public class MappedFileQueueTest {
         // four-byte string.
         final String fixedMsg = "abcd";
 
+        // 1024 设置最大文件大小。 为1024kb 大于这个大小会自动生成新的文件
         MappedFileQueue mappedFileQueue =
             new MappedFileQueue("target/unit_test_store/b/", 1024, null);
 
@@ -59,11 +60,12 @@ public class MappedFileQueueTest {
         }
 
         assertThat(mappedFileQueue.getMappedMemorySize()).isEqualTo(fixedMsg.getBytes().length * 1024);
-
+        // 根据offset查询映射文件
         MappedFile mappedFile = mappedFileQueue.findMappedFileByOffset(0);
         assertThat(mappedFile).isNotNull();
         assertThat(mappedFile.getFileFromOffset()).isEqualTo(0);
 
+        // 100 在第一个文件之中
         mappedFile = mappedFileQueue.findMappedFileByOffset(100);
         assertThat(mappedFile).isNotNull();
         assertThat(mappedFile.getFileFromOffset()).isEqualTo(0);
@@ -164,7 +166,7 @@ public class MappedFileQueueTest {
             assertThat(mappedFile).isNotNull();
             assertThat(mappedFile.appendMessage(fixedMsg.getBytes())).isTrue();
         }
-
+        // mappedFileQueue.getMappedMemorySize 内存中的数据大小
         assertThat(mappedFileQueue.getMappedMemorySize()).isEqualTo(fixedMsg.length() * 1024);
         mappedFileQueue.shutdown(1000);
         mappedFileQueue.destroy();

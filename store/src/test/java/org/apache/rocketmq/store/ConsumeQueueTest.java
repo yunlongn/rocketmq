@@ -257,7 +257,6 @@ public class ConsumeQueueTest {
             DispatchRequest dispatchRequest = messageStore.getCommitLog().checkMessageAndReturnSize(result.getByteBuffer(), false, false);
 
             assertThat(cq).isNotNull();
-
             Object dispatchResult = method.invoke(cq, dispatchRequest.getCommitLogOffset(),
                 dispatchRequest.getMsgSize(), dispatchRequest.getTagsCode(), dispatchRequest.getConsumeQueueOffset());
 

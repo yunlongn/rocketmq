@@ -73,6 +73,7 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
 
     protected SendMessageContext buildMsgContext(ChannelHandlerContext ctx,
         SendMessageRequestHeader requestHeader) {
+        // 判断是否有 SendMessageHook  hook aop环绕 有的话返回 SendMessageContext 对象  没有则返回 null
         if (!this.hasSendMessageHook()) {
             return null;
         }
@@ -252,6 +253,7 @@ public abstract class AbstractSendMessageProcessor extends AsyncNettyRequestProc
 
     public void executeSendMessageHookBefore(final ChannelHandlerContext ctx, final RemotingCommand request,
         SendMessageContext context) {
+        // 设置 Hook的环绕
         if (hasSendMessageHook()) {
             for (SendMessageHook hook : this.sendMessageHookList) {
                 try {

@@ -121,7 +121,7 @@ public class DefaultMessageStoreTest {
         long ipv4HostMsgs = 10;
         long ipv6HostMsgs = 10;
         long totalMsgs = ipv4HostMsgs + ipv6HostMsgs;
-        QUEUE_TOTAL = 1;
+        QUEUE_TOTAL = 100;
         MessageBody = StoreMessage.getBytes();
         for (long i = 0; i < ipv4HostMsgs; i++) {
             messageStore.putMessage(buildMessage());
@@ -135,6 +135,11 @@ public class DefaultMessageStoreTest {
 
         for (long i = 0; i < totalMsgs; i++) {
             GetMessageResult result = messageStore.getMessage("GROUP_A", "FooBar", 0, i, 1024 * 1024, null);
+            assertThat(result).isNotNull();
+            result.release();
+        }
+        for (long i = 0; i < totalMsgs; i++) {
+            GetMessageResult result = messageStore.getMessage("GROUP_B", "FooBar", Math.toIntExact(Long.valueOf(i)), i, 1024 * 1024, null);
             assertThat(result).isNotNull();
             result.release();
         }

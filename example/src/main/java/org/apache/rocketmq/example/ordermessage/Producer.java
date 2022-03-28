@@ -33,6 +33,7 @@ public class Producer {
     public static void main(String[] args) throws UnsupportedEncodingException {
         try {
             DefaultMQProducer producer = new DefaultMQProducer("please_rename_unique_group_name");
+            producer.setNamesrvAddr("127.0.0.1:9876");
             producer.start();
 
             String[] tags = new String[] {"TagA", "TagB", "TagC", "TagD", "TagE"};
@@ -46,7 +47,7 @@ public class Producer {
                     public MessageQueue select(List<MessageQueue> mqs, Message msg, Object arg) {
                         Integer id = (Integer) arg;
                         int index = id % mqs.size();
-                        return mqs.get(index);
+                        return mqs.get(0);
                     }
                 }, orderId);
 

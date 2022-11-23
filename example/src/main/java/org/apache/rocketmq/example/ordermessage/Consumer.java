@@ -29,13 +29,33 @@ import org.apache.rocketmq.common.message.MessageExt;
 public class Consumer {
 
     public static void main(String[] args) throws MQClientException {
-        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("please_rename_unique_group_name_3");
+
+        new Thread(
+                ()->{
+                    try {
+                        Consumer.extracted("please_rename_unique_group_name_1");
+                    } catch (MQClientException e) {
+                        e.printStackTrace();
+                    }
+                }
+        ) .start();
+        new Thread(
+                ()->{
+                    try {
+                        Consumer.extracted("please_rename_unique_group_name_2");
+                    } catch (MQClientException e) {
+                        e.printStackTrace();
+                    }
+                }
+        ) .start();
+        System.out.printf("Consumer Started.%n");
+    }
+
+    private static void extracted(String groupName) throws MQClientException {
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer(groupName);
         consumer.setNamesrvAddr("127.0.0.1:9876");
-
         consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
-
-        consumer.subscribe("TopicTest", "TagA || TagC || TagD");
-
+        consumer.subscribe("TopicTestjjj", "TagA || TagB || TagC || TagD|| TagE");
         consumer.registerMessageListener(new MessageListenerOrderly() {
             AtomicLong consumeTimes = new AtomicLong(0);
 
@@ -44,19 +64,16 @@ public class Consumer {
                 context.setAutoCommit(true);
                 System.out.printf("%s Receive New Messages: %s %n", Thread.currentThread().getName(), msgs);
                 this.consumeTimes.incrementAndGet();
-                if ((this.consumeTimes.get() % 2) == 0) {
-                    return ConsumeOrderlyStatus.SUCCESS;
-                } else if ((this.consumeTimes.get() % 5) == 0) {
-                    context.setSuspendCurrentQueueTimeMillis(3000);
-                    return ConsumeOrderlyStatus.SUSPEND_CURRENT_QUEUE_A_MOMENT;
-                }
-
                 return ConsumeOrderlyStatus.SUCCESS;
             }
         });
-
         consumer.start();
-        System.out.printf("Consumer Started.%n");
     }
+
+
+
+
+
+
 
 }

@@ -33,6 +33,8 @@ public enum GetMessageStatus {
     OFFSET_TOO_SMALL,
 
     NO_MATCHED_LOGIC_QUEUE,
-
+    /**
+     * 这个 queue 没有消息
+     */
     NO_MESSAGE_IN_QUEUE,
 }

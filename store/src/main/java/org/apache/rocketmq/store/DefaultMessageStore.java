@@ -584,23 +584,31 @@ public class DefaultMessageStore implements MessageStore {
         // lazy init when find msg.
         GetMessageResult getResult = null;
 
+        // 获取最大的Offset
         final long maxOffsetPy = this.commitLog.getMaxOffset();
 
+        // 获取指定的 ConsumeQueue
         ConsumeQueue consumeQueue = findConsumeQueue(topic, queueId);
         if (consumeQueue != null) {
+            // 获取指定的 ConsumeQueue 最小的 Offset值
             minOffset = consumeQueue.getMinOffsetInQueue();
+            // 获取指定的 ConsumeQueue 最大的 Offset值
             maxOffset = consumeQueue.getMaxOffsetInQueue();
 
+            // 最大的Offset为0
             if (maxOffset == 0) {
                 status = GetMessageStatus.NO_MESSAGE_IN_QUEUE;
                 nextBeginOffset = nextOffsetCorrection(offset, 0);
             } else if (offset < minOffset) {
+                // 查找的消息 不在这个  ConsumeQueue 里边
                 status = GetMessageStatus.OFFSET_TOO_SMALL;
                 nextBeginOffset = nextOffsetCorrection(offset, minOffset);
             } else if (offset == maxOffset) {
+                // 查找的消息 offset 在临界最大值。 溢出
                 status = GetMessageStatus.OFFSET_OVERFLOW_ONE;
                 nextBeginOffset = nextOffsetCorrection(offset, offset);
             } else if (offset > maxOffset) {
+                // 查找的消息 offset 大于临界最大值。 偏移异常
                 status = GetMessageStatus.OFFSET_OVERFLOW_BADLY;
                 if (0 == minOffset) {
                     nextBeginOffset = nextOffsetCorrection(offset, minOffset);
@@ -608,6 +616,7 @@ public class DefaultMessageStore implements MessageStore {
                     nextBeginOffset = nextOffsetCorrection(offset, maxOffset);
                 }
             } else {
+                // 命中 consumeQueue 获取指定 offset 的值
                 SelectMappedBufferResult bufferConsumeQueue = consumeQueue.getIndexBuffer(offset);
                 if (bufferConsumeQueue != null) {
                     try {
@@ -1991,6 +2000,9 @@ public class DefaultMessageStore implements MessageStore {
         }
     }
 
+    /**
+     * RocketMQ 采用专门的线程来根据comitlog offset来将commitlog转发给ConsumeQueue、Index
+     */
     class ReputMessageService extends ServiceThread {
 
         private volatile long reputFromOffset = 0;

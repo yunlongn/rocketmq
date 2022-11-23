@@ -743,8 +743,9 @@ public class CommitLog {
         // Statistics
         storeStatsService.getSinglePutMessageTopicTimesTotal(msg.getTopic()).add(1);
         storeStatsService.getSinglePutMessageTopicSizeTotal(topic).add(result.getWroteBytes());
-
+        // 是否进行刷盘
         CompletableFuture<PutMessageStatus> flushResultFuture = submitFlushRequest(result, msg);
+        // 如果是同步Master，同步到从节点
         CompletableFuture<PutMessageStatus> replicaResultFuture = submitReplicaRequest(result, msg);
         // 进行两个 CompletableFuture 的等待
         return flushResultFuture.thenCombine(replicaResultFuture, (flushStatus, replicaStatus) -> {

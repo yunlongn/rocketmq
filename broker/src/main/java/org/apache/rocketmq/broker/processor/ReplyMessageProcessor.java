@@ -58,16 +58,19 @@ public class ReplyMessageProcessor extends AbstractSendMessageProcessor implemen
     public RemotingCommand processRequest(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
         SendMessageContext mqtraceContext = null;
+        // 解析请求处理
         SendMessageRequestHeader requestHeader = parseRequestHeader(request);
         if (requestHeader == null) {
             return null;
         }
-
+        // 构建MsgContext
         mqtraceContext = buildMsgContext(ctx, requestHeader);
+        // 执行发送消息之前的钩子
         this.executeSendMessageHookBefore(ctx, request, mqtraceContext);
 
         RemotingCommand response = this.processReplyMessageRequest(ctx, request, mqtraceContext, requestHeader);
 
+        // 执行发送消息之后的钩子
         this.executeSendMessageHookAfter(response, mqtraceContext);
         return response;
     }
@@ -99,6 +102,7 @@ public class ReplyMessageProcessor extends AbstractSendMessageProcessor implemen
         final RemotingCommand request,
         final SendMessageContext sendMessageContext,
         final SendMessageRequestHeader requestHeader) {
+        // 生成 response RemotingCommand 响应数据
         final RemotingCommand response = RemotingCommand.createResponseCommand(SendMessageResponseHeader.class);
         final SendMessageResponseHeader responseHeader = (SendMessageResponseHeader) response.readCustomHeader();
 
@@ -142,6 +146,7 @@ public class ReplyMessageProcessor extends AbstractSendMessageProcessor implemen
         msgInner.setStoreHost(this.getStoreHost());
         msgInner.setReconsumeTimes(requestHeader.getReconsumeTimes() == null ? 0 : requestHeader.getReconsumeTimes());
 
+        // 推送回复的消息
         PushReplyResult pushReplyResult = this.pushReplyMessage(ctx, requestHeader, msgInner);
         this.handlePushReplyResult(pushReplyResult, response, responseHeader, queueIdInt);
 
@@ -156,6 +161,7 @@ public class ReplyMessageProcessor extends AbstractSendMessageProcessor implemen
     private PushReplyResult pushReplyMessage(final ChannelHandlerContext ctx,
         final SendMessageRequestHeader requestHeader,
         final Message msg) {
+        // 回复消息请求的处理
         ReplyMessageRequestHeader replyMessageRequestHeader = new ReplyMessageRequestHeader();
         replyMessageRequestHeader.setBornHost(ctx.channel().remoteAddress().toString());
         replyMessageRequestHeader.setStoreHost(this.getStoreHost().toString());

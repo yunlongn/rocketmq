@@ -319,6 +319,7 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
                         subscriptionData);
 
                     switch (pullResult.getPullStatus()) {
+                        // 成功
                         case FOUND:
                             // 设置下次拉取消息队列位置
                             long prevRequestOffset = pullRequest.getNextOffset();
@@ -340,7 +341,7 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
 
                                 // 提交拉取到的消息到消息处理队列
                                 boolean dispatchToConsume = processQueue.putMessage(pullResult.getMsgFoundList());
-                                // 提交消费请求 调用消费方法。执行消费逻辑
+                                // 提交消费请求 调用消费方法。执行消费逻辑 通知数据进行消费
                                 DefaultMQPushConsumerImpl.this.consumeMessageService.submitConsumeRequest(
                                     pullResult.getMsgFoundList(),
                                     processQueue,
@@ -349,9 +350,11 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
 
                                 // 提交下次拉取消息请求
                                 if (DefaultMQPushConsumerImpl.this.defaultMQPushConsumer.getPullInterval() > 0) {
+                                    // 将 pullRequest 扔回队列之中
                                     DefaultMQPushConsumerImpl.this.executePullRequestLater(pullRequest,
                                         DefaultMQPushConsumerImpl.this.defaultMQPushConsumer.getPullInterval());
                                 } else {
+                                    // 将 pullRequest 扔回队列之中
                                     DefaultMQPushConsumerImpl.this.executePullRequestImmediately(pullRequest);
                                 }
                             }
@@ -546,6 +549,7 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
         } catch (Exception e) {
             log.error("sendMessageBack Exception, " + this.defaultMQPushConsumer.getConsumerGroup(), e);
 
+            //Topic 变成 %RETRY% + consumerGroup
             Message newMsg = new Message(MixAll.getRetryTopic(this.defaultMQPushConsumer.getConsumerGroup()), msg.getBody());
 
             String originMsgId = MessageAccessor.getOriginMessageId(msg);
@@ -555,8 +559,10 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
             MessageAccessor.setProperties(newMsg, msg.getProperties());
             MessageAccessor.putProperty(newMsg, MessageConst.PROPERTY_RETRY_TOPIC, msg.getTopic());
             MessageAccessor.setReconsumeTime(newMsg, String.valueOf(msg.getReconsumeTimes() + 1));
+            //最大重试次数
             MessageAccessor.setMaxReconsumeTimes(newMsg, String.valueOf(getMaxReconsumeTimes()));
             MessageAccessor.clearProperty(newMsg, MessageConst.PROPERTY_TRANSACTION_PREPARED);
+            //DELAY = 重试次数 + 3
             newMsg.setDelayTimeLevel(3 + msg.getReconsumeTimes());
 
             this.mQClientFactory.getDefaultMQProducer().send(newMsg);

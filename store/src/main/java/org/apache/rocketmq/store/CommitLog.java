@@ -639,6 +639,7 @@ public class CommitLog {
             // Delay Delivery
             if (msg.getDelayTimeLevel() > 0) {
                 if (msg.getDelayTimeLevel() > this.defaultMessageStore.getScheduleMessageService().getMaxDelayLevel()) {
+                    //从源码看，这里最大值是18
                     msg.setDelayTimeLevel(this.defaultMessageStore.getScheduleMessageService().getMaxDelayLevel());
                 }
 
@@ -854,9 +855,12 @@ public class CommitLog {
         // Statistics
         storeStatsService.getSinglePutMessageTopicTimesTotal(messageExtBatch.getTopic()).add(result.getMsgNum());
         storeStatsService.getSinglePutMessageTopicSizeTotal(messageExtBatch.getTopic()).add(result.getWroteBytes());
-
+        // 进行两个 CompletableFuture 的等待
+        // 是否进行刷盘
         CompletableFuture<PutMessageStatus> flushOKFuture = submitFlushRequest(result, messageExtBatch);
+        // 如果是同步Master，同步到从节点
         CompletableFuture<PutMessageStatus> replicaOKFuture = submitReplicaRequest(result, messageExtBatch);
+        // 进行两个 CompletableFuture 的等待
         return flushOKFuture.thenCombine(replicaOKFuture, (flushStatus, replicaStatus) -> {
             if (flushStatus != PutMessageStatus.PUT_OK) {
                 putMessageResult.setPutMessageStatus(flushStatus);

@@ -151,7 +151,6 @@ public class ScheduleMessageService extends ConfigManager {
 
 
             // 延迟十秒开一个每十秒执行一次的定时任务，  持久化延迟消息的偏移量delayOffset
-
             this.deliverExecutorService.scheduleAtFixedRate(new Runnable() {
 
                 @Override

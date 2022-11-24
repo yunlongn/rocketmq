@@ -82,6 +82,13 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         return response;
     }
 
+    /**
+     * SendMessageProcessor 客户端发送的消息直接走了这里。因为不需要返回数据给客户端。发送消息是一个异步的请求.
+     *
+     * @param ctx ctx
+     * @param request request
+     * @param responseCallback responseCallback
+     */
     @Override
     public void asyncProcessRequest(ChannelHandlerContext ctx, RemotingCommand request, RemotingResponseCallback responseCallback) throws Exception {
         asyncProcessRequest(ctx, request).thenAcceptAsync(responseCallback::callback, this.brokerController.getPutMessageFutureExecutor());
@@ -92,6 +99,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         final SendMessageContext mqtraceContext;
         switch (request.getCode()) {
             case RequestCode.CONSUMER_SEND_MSG_BACK:
+                // 消息消费者失败了，重新发回来的处理
                 return this.asyncConsumerSendMsgBack(ctx, request);
             default:
                 // 解析请求
@@ -103,9 +111,12 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 mqtraceContext = buildMsgContext(ctx, requestHeader);
                 // hook：处理发送消息前逻辑
                 this.executeSendMessageHookBefore(ctx, request, mqtraceContext);
+                // 是否为批量的消息
                 if (requestHeader.isBatch()) {
+                    // 处理多个消息
                     return this.asyncSendBatchMessage(ctx, request, mqtraceContext, requestHeader);
                 } else {
+                    // 处理单个消息
                     return this.asyncSendMessage(ctx, request, mqtraceContext, requestHeader);
                 }
         }
@@ -147,6 +158,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
             return CompletableFuture.completedFuture(response);
         }
 
+        // 设置新的Topic  %RETRY%
         String newTopic = MixAll.getRetryTopic(requestHeader.getGroup());
         int queueIdInt = ThreadLocalRandom.current().nextInt(99999999) % subscriptionGroupConfig.getRetryQueueNums();
         int topicSysFlag = 0;
@@ -192,6 +204,8 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
             }
         }
 
+        // 超过最大消费次数16次，或者 delayLevel < 0
+        // 则将消息投递到死信队列
         if (msgExt.getReconsumeTimes() >= maxReconsumeTimes
             || delayLevel < 0) {
             newTopic = MixAll.getDLQTopic(requestHeader.getGroup());
@@ -233,6 +247,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         MessageAccessor.setOriginMessageId(msgInner, UtilAll.isBlank(originMsgId) ? msgExt.getMsgId() : originMsgId);
         msgInner.setPropertiesString(MessageDecoder.messageProperties2String(msgExt.getProperties()));
 
+        // 存到 messageStore 里边 然后 ScheduleMessageService 扫描执行发送延时消息
         CompletableFuture<PutMessageResult> putMessageResult = this.brokerController.getMessageStore().asyncPutMessage(msgInner);
         return putMessageResult.thenApply((r) -> {
             if (r != null) {
@@ -280,10 +295,10 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
 
         final byte[] body = request.getBody();
 
-        // 如果队列小于0，从可用队列随机选择
         int queueIdInt = requestHeader.getQueueId();
         TopicConfig topicConfig = this.brokerController.getTopicConfigManager().selectTopicConfig(requestHeader.getTopic());
 
+        // 如果队列小于0，从可用队列随机选择
         if (queueIdInt < 0) {
             queueIdInt = randomQueueId(topicConfig.getWriteQueueNums());
         }
@@ -292,6 +307,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         msgInner.setTopic(requestHeader.getTopic());
         msgInner.setQueueId(queueIdInt);
 
+        // 非重试Topic则返回true
         if (!handleRetryAndDLQ(requestHeader, response, request, msgInner, topicConfig)) {
             return CompletableFuture.completedFuture(response);
         }
@@ -347,12 +363,25 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         );
     }
 
+    /**
+     * 非重试Topic则返回true.
+     *
+     * @param requestHeader requestHeader
+     * @param response response
+     * @param request request
+     * @param msg msg
+     * @param topicConfig topicConfig
+     * @return {@link boolean}
+     */
     private boolean handleRetryAndDLQ(SendMessageRequestHeader requestHeader, RemotingCommand response,
                                       RemotingCommand request,
                                       MessageExt msg, TopicConfig topicConfig) {
         String newTopic = requestHeader.getTopic();
+        // 判断是否包含重试topic前缀(%RETRY%)
         if (null != newTopic && newTopic.startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
+            // 消费组
             String groupName = newTopic.substring(MixAll.RETRY_GROUP_TOPIC_PREFIX.length());
+            // 获取订阅组配置
             SubscriptionGroupConfig subscriptionGroupConfig =
                 this.brokerController.getSubscriptionGroupManager().findSubscriptionGroupConfig(groupName);
             if (null == subscriptionGroupConfig) {
@@ -362,12 +391,16 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 return false;
             }
 
+            // 获取订阅组配置的最大重试次数  默认:16 SubscriptionGroupConfig
             int maxReconsumeTimes = subscriptionGroupConfig.getRetryMaxTimes();
             if (request.getVersion() >= MQVersion.Version.V3_4_9.ordinal() && requestHeader.getMaxReconsumeTimes() != null) {
+                // 从请求头获取最大重试次数
                 maxReconsumeTimes = requestHeader.getMaxReconsumeTimes();
             }
             int reconsumeTimes = requestHeader.getReconsumeTimes() == null ? 0 : requestHeader.getReconsumeTimes();
+            // 条件满足，则已经达到最大重试次数16
             if (reconsumeTimes >= maxReconsumeTimes) {
+                // 超过最大重试次数，生成死信队列topic，  生成规则: %DLQ% + groupName
                 newTopic = MixAll.getDLQTopic(groupName);
                 int queueIdInt = ThreadLocalRandom.current().nextInt(99999999) % DLQ_NUMS_PER_GROUP;
                 topicConfig = this.brokerController.getTopicConfigManager().createTopicInSendMessageBackMethod(newTopic,
@@ -378,6 +411,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 msg.setQueueId(queueIdInt);
                 msg.setDelayTimeLevel(0);
                 if (null == topicConfig) {
+                    // 不存在死信队列，返回错误信息
                     response.setCode(ResponseCode.SYSTEM_ERROR);
                     response.setRemark("topic[" + newTopic + "] not exist");
                     return false;

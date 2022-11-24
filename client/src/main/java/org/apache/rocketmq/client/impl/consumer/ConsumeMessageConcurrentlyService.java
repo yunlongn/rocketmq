@@ -293,6 +293,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
                 List<MessageExt> msgBackFailed = new ArrayList<MessageExt>(consumeRequest.getMsgs().size());
                 for (int i = ackIndex + 1; i < consumeRequest.getMsgs().size(); i++) {
                     MessageExt msg = consumeRequest.getMsgs().get(i);
+                    // 发送消息给broker
                     boolean result = this.sendMessageBack(msg, context);
                     if (!result) {
                         msg.setReconsumeTimes(msg.getReconsumeTimes() + 1);
@@ -300,7 +301,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
                     }
                 }
 
-                // 发回Broker失败的消息，直接提交延迟重新消费
+                // 发回Broker失败的消息，并且提交延迟重新消费
                 if (!msgBackFailed.isEmpty()) {
                     consumeRequest.getMsgs().removeAll(msgBackFailed);
 

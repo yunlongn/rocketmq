@@ -340,6 +340,7 @@ public class DefaultMQPushConsumerImpl implements MQConsumerInner {
                                     pullRequest.getMessageQueue().getTopic(), pullResult.getMsgFoundList().size());
 
                                 // 提交拉取到的消息到消息处理队列
+                                // 这个只有在顺序消费的时候才会遇到，并发消费不会用到
                                 boolean dispatchToConsume = processQueue.putMessage(pullResult.getMsgFoundList());
                                 // 提交消费请求 调用消费方法。执行消费逻辑 通知数据进行消费
                                 DefaultMQPushConsumerImpl.this.consumeMessageService.submitConsumeRequest(

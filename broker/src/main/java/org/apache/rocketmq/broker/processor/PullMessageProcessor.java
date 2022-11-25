@@ -144,7 +144,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
         //长轮询允许的时间长度  15秒
         final long suspendTimeoutMillisLong = hasSuspendFlag ? requestHeader.getSuspendTimeoutMillis() : 0;
 
-        //每个主题都会创建TopicConfig对象
+        //每个主题都会创建TopicConfig对象 检查 topic 是否存在
         TopicConfig topicConfig = this.brokerController.getTopicConfigManager().selectTopicConfig(requestHeader.getTopic());
         if (null == topicConfig) {
             log.error("the topic {} not exist, consumer: {}", requestHeader.getTopic(), RemotingHelper.parseChannelRemoteAddr(channel));
@@ -191,7 +191,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
                 return response;
             }
         } else {
-            //消费者组信息是否为空
+            //消费者组信息是否为空 Consumer Group 在broker上获取这个对象
             ConsumerGroupInfo consumerGroupInfo =
                 this.brokerController.getConsumerManager().getConsumerGroupInfo(requestHeader.getConsumerGroup());
             if (null == consumerGroupInfo) {
@@ -424,6 +424,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
                         getMessageResult.getBufferTotalSize());
 
                     this.brokerController.getBrokerStatsManager().incBrokerGetNums(getMessageResult.getMessageCount());
+                    // Y：需要拷贝到用户态下的heap，然后再copy到内核态的socket，需要开销。N：zero copy-FileRegion。
                     if (this.brokerController.getBrokerConfig().isTransferMsgByHeap()) {
                         final byte[] r = this.readGetMessageResult(getMessageResult, requestHeader.getConsumerGroup(), requestHeader.getTopic(), requestHeader.getQueueId());
                         this.brokerController.getBrokerStatsManager().incGroupGetLatency(requestHeader.getConsumerGroup(),
@@ -452,7 +453,7 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
                     }
                     break;
                 case ResponseCode.PULL_NOT_FOUND:
-                    // 大部分情况下都是 pullRequest.offset  ==  queue.maxOffset(客户端消费进度和服务器消息进度持平了)
+                    // 大部分情况下都是 pullRequest.offset  ==  queue.maxOffset (客户端消费进度和服务器消息进度持平了)
                     // queue maxOffset 计算方式： dataSize / unit_size(20) => 得出来的结果
                     // 举例子，当dataSize 内存储一条 CQData 时， dataSize = 20
                     // dataSize / unit_size(20) => 1
@@ -466,9 +467,6 @@ public class PullMessageProcessor extends AsyncNettyRequestProcessor implements 
                     // 条件成立：说明本次请求允许长轮询
                     // （注意brokerAllowSuspend，它是由重载的方法 传的 true，当长轮询结束时 再次 执行 processRequest的时候，该参数传的是 false）
                     // 也就是每次pull请求，至多在服务器端 长轮询 控制一次
-
-                    // 如果没找到消息就hold，第一次要hold，hold超时就不会再hold
-                    // 什么情况下会走这里呢。 1.该队列还没有消息 2.offset刚好等于最大的offset 3.找不到mappedFile这种情况应该比较少
                     if (brokerAllowSuspend && hasSuspendFlag) {
                         // 获取长轮询时间 15000 毫秒
                         long pollingTimeMills = suspendTimeoutMillisLong;

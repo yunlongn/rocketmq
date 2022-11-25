@@ -89,6 +89,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
     }
 
     public void start() {
+        // 启动定时任务（每15分钟跑一次），清理过期消息
         this.cleanExpireMsgExecutors.scheduleAtFixedRate(new Runnable() {
 
             @Override
@@ -233,6 +234,7 @@ public class ConsumeMessageConcurrentlyService implements ConsumeMessageService 
 
 
     /**
+     * 针对每个ProcessQueue每次最多清理16条过期消息
      *  清理过期消息
      *  定时清理过期消息，默认周期：15min。
      */

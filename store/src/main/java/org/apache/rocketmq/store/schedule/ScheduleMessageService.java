@@ -132,6 +132,7 @@ public class ScheduleMessageService extends ConfigManager {
             if (this.enableAsyncDeliver) {
                 this.handleExecutorService = new ScheduledThreadPoolExecutor(this.maxDelayLevel, new ThreadFactoryImpl("ScheduleMessageExecutorHandleThread_"));
             }
+            // 循环延时时间table 有几个时间段就开几个线程来扫描队列任务
             for (Map.Entry<Integer, Long> entry : this.delayLevelTable.entrySet()) {
                 Integer level = entry.getKey();
                 Long timeDelay = entry.getValue();
@@ -378,12 +379,12 @@ public class ScheduleMessageService extends ConfigManager {
         private long correctDeliverTimestamp(final long now, final long deliverTimestamp) {
 
             long result = deliverTimestamp;
-            // 消息到期时间
+            // 通过延迟结束时间与当前时间作对比，如果延迟结束时间大于当前时间，则表示该条消息还不能被消费，否则延迟结束，可以被消费。
             long maxTimestamp = now + ScheduleMessageService.this.delayLevelTable.get(this.delayLevel);
-            // 如果消息到期，返回当前时间戳
-            if (deliverTimestamp > maxTimestamp) {
-                result = now;
-            }
+            // 条件成立：比如人为地去修改了系统时钟，获取这条消息的延迟结束时间写入有误
+//            if (deliverTimestamp > maxTimestamp) {
+//                result = now;
+//            }
 
             return result;
         }
@@ -422,7 +423,9 @@ public class ScheduleMessageService extends ConfigManager {
             try {
                 int i = 0;
                 ConsumeQueueExt.CqExtUnit cqExtUnit = new ConsumeQueueExt.CqExtUnit();
-                // 循环遍历  ConsumeQueue 获得消息
+                // 循环遍历  ConsumeQueue 获得消息 ConsumeQueue.CQ_STORE_UNIT_SIZE = 20
+                // tagsCode sizePy offsetPy 的对象类型加起来正好为20   int 4   long 8   2*8+4 = 20
+                // 所以每个offset 的占位为20
                 for (; i < bufferCQ.getSize() && isStarted(); i += ConsumeQueue.CQ_STORE_UNIT_SIZE) {
                     // 消息的commitLog物理偏移量
                     long offsetPy = bufferCQ.getByteBuffer().getLong();
@@ -447,7 +450,7 @@ public class ScheduleMessageService extends ConfigManager {
                     long now = System.currentTimeMillis();
                     // 从消息tagsCode属性中解析出消息应当被投递的时间，然后与当前时间做比较，判断是否应该进行投递（消息是否到期）；
                     long deliverTimestamp = this.correctDeliverTimestamp(now, tagsCode);
-                    // 定时任务下一次开始读取延迟队列的offset
+                    // 定时任务下一次开始读取延迟队列的offset  i / ConsumeQueue.CQ_STORE_UNIT_SIZE 因为每次 i 递增都是20 所以这里 i /20 就是下个 offset 的位置
                     nextOffset = offset + (i / ConsumeQueue.CQ_STORE_UNIT_SIZE);
 
                     // 判断消息是不是过期了。执行执行时间的定时器来消费这个数据
@@ -457,6 +460,8 @@ public class ScheduleMessageService extends ConfigManager {
                         // 延时队列中最小到期的那条消息都还没到延迟时间
                         // 重新提交一个TimerTask，延迟执行时间为延时队列中第一个消息剩余的延时时间
                         // 设置这个 节点的消息，0.1秒后操作
+                        // 这里的 return 意思是，在指定当前offset没有被消费之前。后面的一个都别想走。一定要等第一个先被消费。
+                        // 因为他比较先进来。那么他一定是最早出去的
                         this.scheduleNextTimerTask(nextOffset, DELAY_FOR_A_WHILE);
                         return;
                     }

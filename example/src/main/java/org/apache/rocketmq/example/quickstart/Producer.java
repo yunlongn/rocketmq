@@ -57,10 +57,11 @@ public class Producer {
                 /*
                  * Create a message instance, specifying topic, tag and message body.
                  */
-                Message msg = new Message("TopicTest" /* Topic */,
+                Message msg = new Message("TopicTest1234" /* Topic */,
                     "TagA" /* Tag */,
                     ("Hello RocketMQ 4444 " + i).getBytes(RemotingHelper.DEFAULT_CHARSET) /* Message body */
                 );
+                msg.setDelayTimeLevel(2);
 
                 /*
                  * Call send message to deliver message to one of brokers.

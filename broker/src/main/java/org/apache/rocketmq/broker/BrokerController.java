@@ -270,10 +270,13 @@ public class BrokerController {
         result = result && this.messageStore.load();
 
         if (result) {
+            // 开启 netty server 可以处理客户端所有请求，如：生产者发送消息的请求，消费者拉取消息的请求。
             this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.clientHousekeepingService);
             NettyServerConfig fastConfig = (NettyServerConfig) this.nettyServerConfig.clone();
             fastConfig.setListenPort(nettyServerConfig.getListenPort() - 2);
+            // 功能基本与remotingServer相同，唯一不同的是不可以处理消费者拉取消息的请求。 生产者的发送消息的专用server
             this.fastRemotingServer = new NettyRemotingServer(fastConfig, this.clientHousekeepingService);
+            // 处理接收消息请求的处理线程池 default  `Math.min(Runtime.getRuntime().availableProcessors(), 4)`
             this.sendMessageExecutor = new BrokerFixedThreadPoolExecutor(
                 this.brokerConfig.getSendMessageThreadPoolNums(),
                 this.brokerConfig.getSendMessageThreadPoolNums(),
@@ -282,6 +285,7 @@ public class BrokerController {
                 this.sendThreadPoolQueue,
                 new ThreadFactoryImpl("SendMessageThread_"));
 
+            // 处理异步消息请求的处理线程池， 上面是处理需要同步结果的消息发送，这里是不需要同步结果的消息发送 `Math.min(Runtime.getRuntime().availableProcessors(), 4)`
             this.putMessageFutureExecutor = new BrokerFixedThreadPoolExecutor(
                 this.brokerConfig.getPutMessageFutureThreadPoolNums(),
                 this.brokerConfig.getPutMessageFutureThreadPoolNums(),
@@ -290,6 +294,7 @@ public class BrokerController {
                 this.putThreadPoolQueue,
                 new ThreadFactoryImpl("PutMessageThread_"));
 
+            // 处理消费者拉取消息请求的线程池 `16 + Runtime.getRuntime().availableProcessors() * 2;`
             this.pullMessageExecutor = new BrokerFixedThreadPoolExecutor(
                 this.brokerConfig.getPullMessageThreadPoolNums(),
                 this.brokerConfig.getPullMessageThreadPoolNums(),
@@ -298,6 +303,7 @@ public class BrokerController {
                 this.pullThreadPoolQueue,
                 new ThreadFactoryImpl("PullMessageThread_"));
 
+            // 处理回复消息请求线程池， 当生产者发送消息后，broker 接收该请求后，会将该消息带原封不动的返回给客户端；
             this.replyMessageExecutor = new BrokerFixedThreadPoolExecutor(
                 this.brokerConfig.getProcessReplyMessageThreadPoolNums(),
                 this.brokerConfig.getProcessReplyMessageThreadPoolNums(),
@@ -306,6 +312,8 @@ public class BrokerController {
                 this.replyThreadPoolQueue,
                 new ThreadFactoryImpl("ProcessReplyMessageThread_"));
 
+
+            // 查询或者查看消息处理请求的线程池
             this.queryMessageExecutor = new BrokerFixedThreadPoolExecutor(
                 this.brokerConfig.getQueryMessageThreadPoolNums(),
                 this.brokerConfig.getQueryMessageThreadPoolNums(),
@@ -318,6 +326,7 @@ public class BrokerController {
                 Executors.newFixedThreadPool(this.brokerConfig.getAdminBrokerThreadPoolNums(), new ThreadFactoryImpl(
                     "AdminBrokerThread_"));
 
+            // 客户端注册退出请求的线程池
             this.clientManageExecutor = new ThreadPoolExecutor(
                 this.brokerConfig.getClientManageThreadPoolNums(),
                 this.brokerConfig.getClientManageThreadPoolNums(),
@@ -326,6 +335,7 @@ public class BrokerController {
                 this.clientManagerThreadPoolQueue,
                 new ThreadFactoryImpl("ClientManageThread_"));
 
+            // 接收心跳检测请求的线程池
             this.heartbeatExecutor = new BrokerFixedThreadPoolExecutor(
                 this.brokerConfig.getHeartbeatThreadPoolNums(),
                 this.brokerConfig.getHeartbeatThreadPoolNums(),
@@ -334,6 +344,7 @@ public class BrokerController {
                 this.heartbeatThreadPoolQueue,
                 new ThreadFactoryImpl("HeartbeatThread_", true));
 
+            // 接收结束事务消息请求的线程池
             this.endTransactionExecutor = new BrokerFixedThreadPoolExecutor(
                 this.brokerConfig.getEndTransactionThreadPoolNums(),
                 this.brokerConfig.getEndTransactionThreadPoolNums(),
@@ -342,6 +353,7 @@ public class BrokerController {
                 this.endTransactionThreadPoolQueue,
                 new ThreadFactoryImpl("EndTransactionThread_"));
 
+            // 消费者管理的请求的线程池
             this.consumerManageExecutor =
                 Executors.newFixedThreadPool(this.brokerConfig.getConsumerManageThreadPoolNums(), new ThreadFactoryImpl(
                     "ConsumerManageThread_"));
@@ -350,6 +362,7 @@ public class BrokerController {
 
             final long initialDelay = UtilAll.computeNextMorningTimeMillis() - System.currentTimeMillis();
             final long period = 1000 * 60 * 60 * 24;
+            // 每日检查的定时日志 打印昨天接收消息的总数，与消费者消费消息的总数
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
@@ -361,6 +374,7 @@ public class BrokerController {
                 }
             }, initialDelay, period, TimeUnit.MILLISECONDS);
 
+            // 定时刷新当前实例的的数据到  consumerOffset.json 中去
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
@@ -372,6 +386,7 @@ public class BrokerController {
                 }
             }, 1000 * 10, this.brokerConfig.getFlushConsumerOffsetInterval(), TimeUnit.MILLISECONDS);
 
+            // 定时刷新当前实例的的数据到  consumerFilter.json 中去
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
@@ -383,6 +398,9 @@ public class BrokerController {
                 }
             }, 1000 * 10, 1000 * 10, TimeUnit.MILLISECONDS);
 
+            // 三分钟一次 检查当前消费组消费消息的进度
+            // 超过consumerFallbehindThreshold = 1024L * 1024 * 1024 * 16配置的大小后会剔除掉该订阅组，
+            // 停止消费消息用来保护broker，因为存储消息的commitLog一个文件大小才为1024L * 1024 * 1024。
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
@@ -394,6 +412,7 @@ public class BrokerController {
                 }
             }, 3, 3, TimeUnit.MINUTES);
 
+            // 打印各个队列的任务大小以及最早的放入时间
             this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
                 @Override
                 public void run() {
@@ -584,7 +603,7 @@ public class BrokerController {
         this.pullMessageProcessor.registerConsumeMessageHook(consumeMessageHookList);
 
         /**
-         * ReplyMessageProcessor
+         * ReplyMessageProcessor 当生产者发送消息后，broker 接收该请求后，会将该消息带原封不动的返回给客户端；
          */
         ReplyMessageProcessor replyMessageProcessor = new ReplyMessageProcessor(this);
         replyMessageProcessor.registerSendMessageHook(sendMessageHookList);

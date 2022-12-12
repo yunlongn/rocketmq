@@ -57,6 +57,7 @@ public class ReplyMessageProcessor extends AbstractSendMessageProcessor implemen
     @Override
     public RemotingCommand processRequest(ChannelHandlerContext ctx,
         RemotingCommand request) throws RemotingCommandException {
+        // 当生产者发送消息后，broker 接收该请求后，会将该消息带原封不动的返回给客户端；
         SendMessageContext mqtraceContext = null;
         // 解析请求处理
         SendMessageRequestHeader requestHeader = parseRequestHeader(request);

@@ -292,11 +292,15 @@ public class DefaultMessageStore implements MessageStore {
 
         if (!messageStoreConfig.isEnableDLegerCommitLog()) {
             this.haService.start();
+            // 延迟消息定时任务开启
             this.handleScheduleMessageService(messageStoreConfig.getBrokerRole());
         }
 
+        // 负责 consumeQueue 刷盘 (当内存中存在还未刷盘的consumeQueue时，FlushConsumeQueueService负责将其及时刷盘)
         this.flushConsumeQueueService.start();
+
         this.commitLog.start();
+        // 统计信息打印
         this.storeStatsService.start();
 
         this.createTempFile();
@@ -1350,6 +1354,7 @@ public class DefaultMessageStore implements MessageStore {
             }
         }, 1000 * 60, this.messageStoreConfig.getCleanResourceInterval(), TimeUnit.MILLISECONDS);
 
+        // 自我检查
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -1582,6 +1587,7 @@ public class DefaultMessageStore implements MessageStore {
     @Override
     public void handleScheduleMessageService(final BrokerRole brokerRole) {
         if (this.scheduleMessageService != null) {
+            // 判断当前 broker 角色
             if (brokerRole == BrokerRole.SLAVE) {
                 this.scheduleMessageService.shutdown();
             } else {
@@ -2001,7 +2007,7 @@ public class DefaultMessageStore implements MessageStore {
     }
 
     /**
-     * RocketMQ 采用专门的线程来根据comitlog offset来将commitlog转发给ConsumeQueue、Index
+     * RocketMQ 采用专门的线程来根据commitLog offset来将commitLog转发给ConsumeQueue、Index
      */
     class ReputMessageService extends ServiceThread {
 

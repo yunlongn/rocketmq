@@ -141,17 +141,21 @@ public class MixAll {
     public static void string2File(final String str, final String fileName) throws IOException {
 
         String tmpFile = fileName + ".tmp";
+        // 将 当前程序中的数据，直接放到.tmp中
         string2FileNotSafe(str, tmpFile);
 
         String bakFile = fileName + ".bak";
+        // 拿一下旧的数据，将旧的数据放到 .bak中
         String prevContent = file2String(fileName);
         if (prevContent != null) {
             string2FileNotSafe(prevContent, bakFile);
         }
 
+        //  把旧的文件给删除了
         File file = new File(fileName);
         file.delete();
 
+        // .tmp 文件直接改名。上位成原文件
         file = new File(tmpFile);
         file.renameTo(new File(fileName));
     }

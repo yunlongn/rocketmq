@@ -151,7 +151,7 @@ public class ScheduleMessageService extends ConfigManager {
             }
 
 
-            // 延迟十秒开一个每十秒执行一次的定时任务，  持久化延迟消息的偏移量delayOffset
+            // 定时将当前的消费进度存到文件中  delayOffset.json
             this.deliverExecutorService.scheduleAtFixedRate(new Runnable() {
 
                 @Override

@@ -59,12 +59,14 @@ public class MappedFileQueue {
     public void checkSelf() {
 
         if (!this.mappedFiles.isEmpty()) {
+            // 遍历所有mappedFile
             Iterator<MappedFile> iterator = mappedFiles.iterator();
             MappedFile pre = null;
             while (iterator.hasNext()) {
                 MappedFile cur = iterator.next();
 
                 if (pre != null) {
+                    // 校验相邻两个文件offset差值是否为文件大小
                     if (cur.getFileFromOffset() - pre.getFileFromOffset() != this.mappedFileSize) {
                         LOG_ERROR.error("[BUG]The mappedFile queue's data is damaged, the adjacent mappedFile's offset don't match. pre file {}, cur file {}",
                             pre.getFileName(), cur.getFileName());

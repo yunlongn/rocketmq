@@ -68,13 +68,13 @@ public abstract class ConfigManager {
     public abstract void decode(final String jsonString);
 
     public synchronized void persist() {
-        // 读取offsetTable缓存的延迟队列的值
+        // 读取 读取继承类的json值 consumerFilterManager consumerOffsetManager ScheduleMessageService
         String jsonString = this.encode(true);
         if (jsonString != null) {
-            // 读取delayOffset.json的文件地址
+            // 读取 文件地址 例如  consumerFilter.json consumerOffset.json delayOffset.json delayOffset.json
             String fileName = this.configFilePath();
             try {
-                // 持久化到delayOffset.json文件中
+                // 持久化当前实例的数据到文件中，并且把以前文件拷贝一下到 .bak中
                 MixAll.string2File(jsonString, fileName);
             } catch (IOException e) {
                 log.error("persist file " + fileName + " exception", e);

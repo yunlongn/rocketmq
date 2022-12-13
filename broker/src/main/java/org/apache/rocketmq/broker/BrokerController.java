@@ -891,37 +891,46 @@ public class BrokerController {
 
     public void start() throws Exception {
         if (this.messageStore != null) {
+            //启动消息存储相关的任务
             this.messageStore.start();
         }
 
         if (this.remotingServer != null) {
+            // 公共的 netty server
             this.remotingServer.start();
         }
 
         if (this.fastRemotingServer != null) {
+            // 启动给消息发送者使用的netty服务
             this.fastRemotingServer.start();
         }
 
         if (this.fileWatchService != null) {
+            // ssl相关文件的监视器，如果ssl相关的配置文件更换，会更换netty的tls信息。
             this.fileWatchService.start();
         }
 
         if (this.brokerOuterAPI != null) {
+            // broker 使用的 netty 客户端
             this.brokerOuterAPI.start();
         }
 
         if (this.pullRequestHoldService != null) {
+            // 客户端消费消息 holdService 服务。对请求hold住，等到有数据再返回
             this.pullRequestHoldService.start();
         }
 
         if (this.clientHousekeepingService != null) {
+            //启动心跳检测服务
             this.clientHousekeepingService.start();
         }
 
         if (this.filterServerManager != null) {
+            //启动消息过滤服务
             this.filterServerManager.start();
         }
 
+        //如果没启动DLegerCommitLog ，就将Broker注册到NameServer上
         if (!messageStoreConfig.isEnableDLegerCommitLog()) {
             startProcessorByHa(messageStoreConfig.getBrokerRole());
             handleSlaveSynchronize(messageStoreConfig.getBrokerRole());
@@ -933,6 +942,7 @@ public class BrokerController {
             @Override
             public void run() {
                 try {
+                    // 注册数据到 namespace上 定时发送心跳
                     BrokerController.this.registerBrokerAll(true, false, brokerConfig.isForceRegister());
                 } catch (Throwable e) {
                     log.error("registerBrokerAll Exception", e);
@@ -984,11 +994,13 @@ public class BrokerController {
             topicConfigWrapper.setTopicConfigTable(topicConfigTable);
         }
 
+        // needRegister 检查需要注册的namespaces 发送 RequestCode.QUERY_DATA_VERSION 进行通讯
         if (forceRegister || needRegister(this.brokerConfig.getBrokerClusterName(),
             this.getBrokerAddr(),
             this.brokerConfig.getBrokerName(),
             this.brokerConfig.getBrokerId(),
             this.brokerConfig.getRegisterBrokerTimeoutMills())) {
+            // 发送 RequestCode.REGISTER_BROKER 进行注册
             doRegisterBrokerAll(checkOrderConfig, oneway, topicConfigWrapper);
         }
     }

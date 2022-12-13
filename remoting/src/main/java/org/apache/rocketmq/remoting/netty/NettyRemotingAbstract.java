@@ -379,6 +379,7 @@ public abstract class NettyRemotingAbstract {
     public abstract ExecutorService getCallbackExecutor();
 
     /**
+     * 扫描响应列表。移除超时的响应
      * <p>
      * This method is periodically invoked to scan and expire deprecated request.
      * </p>

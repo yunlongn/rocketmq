@@ -232,7 +232,7 @@ public class MQClientInstance {
                     if (null == this.clientConfig.getNamesrvAddr()) {
                         this.mQClientAPIImpl.fetchNameServerAddr();
                     }
-                    // 启动请求响应通道
+                    // 启动请求客户端
                     this.mQClientAPIImpl.start();
                     // 启动各种定时任务
                     this.startScheduledTask();

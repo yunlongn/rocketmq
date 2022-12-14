@@ -25,24 +25,35 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.apache.rocketmq.client.common.ThreadLocalIndex;
 
 public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> {
+    /**
+     * 对象故障信息Table
+     */
     private final ConcurrentHashMap<String, FaultItem> faultItemTable = new ConcurrentHashMap<String, FaultItem>(16);
 
+    /**
+     * 对象选择Index
+     * @see #pickOneAtLeast()
+     */
     private final ThreadLocalIndex whichItemWorst = new ThreadLocalIndex();
 
     @Override
     public void updateFaultItem(final String name, final long currentLatency, final long notAvailableDuration) {
         FaultItem old = this.faultItemTable.get(name);
         if (null == old) {
+            // 创建对象
             final FaultItem faultItem = new FaultItem(name);
             faultItem.setCurrentLatency(currentLatency);
             faultItem.setStartTimestamp(System.currentTimeMillis() + notAvailableDuration);
 
+            // 更新对象
             old = this.faultItemTable.putIfAbsent(name, faultItem);
             if (old != null) {
                 old.setCurrentLatency(currentLatency);
                 old.setStartTimestamp(System.currentTimeMillis() + notAvailableDuration);
             }
         } else {
+            // 更新对象
+
             old.setCurrentLatency(currentLatency);
             old.setStartTimestamp(System.currentTimeMillis() + notAvailableDuration);
         }
@@ -62,8 +73,13 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
         this.faultItemTable.remove(name);
     }
 
+    /**
+     * 选择一个相对优秀的对象
+     * @return 对象
+     */
     @Override
     public String pickOneAtLeast() {
+        // 创建数组
         final Enumeration<FaultItem> elements = this.faultItemTable.elements();
         List<FaultItem> tmpList = new LinkedList<FaultItem>();
         while (elements.hasMoreElements()) {
@@ -71,6 +87,7 @@ public class LatencyFaultToleranceImpl implements LatencyFaultTolerance<String> 
             tmpList.add(faultItem);
         }
         if (!tmpList.isEmpty()) {
+            // 选择顺序在前一半的对象
             Collections.sort(tmpList);
             final int half = tmpList.size() / 2;
             if (half <= 0) {

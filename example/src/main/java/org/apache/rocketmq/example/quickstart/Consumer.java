@@ -16,27 +16,26 @@
  */
 package org.apache.rocketmq.example.quickstart;
 
+import java.util.List;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
+import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyContext;
 import org.apache.rocketmq.client.consumer.listener.ConsumeConcurrentlyStatus;
 import org.apache.rocketmq.client.consumer.listener.MessageListenerConcurrently;
 import org.apache.rocketmq.client.exception.MQClientException;
 import org.apache.rocketmq.common.consumer.ConsumeFromWhere;
+import org.apache.rocketmq.common.message.MessageExt;
 
 /**
  * This example shows how to subscribe and consume messages using providing {@link DefaultMQPushConsumer}.
  */
 public class Consumer {
 
-    public static final String CONSUMER_GROUP = "please_rename_unique_group_name_4";
-    public static final String DEFAULT_NAMESRVADDR = "127.0.0.1:9876";
-    public static final String TOPIC = "TopicTest";
-
-    public static void main(String[] args) throws MQClientException {
+    public static void main(String[] args) throws InterruptedException, MQClientException {
 
         /*
          * Instantiate with specified consumer group name.
          */
-        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer(CONSUMER_GROUP);
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("please_rename_unique_group_name_4");
 
         /*
          * Specify name server addresses.
@@ -49,32 +48,36 @@ public class Consumer {
          * }
          * </pre>
          */
-        // Uncomment the following line while debugging, namesrvAddr should be set to your local address
-//        consumer.setNamesrvAddr(DEFAULT_NAMESRVADDR);
 
         /*
          * Specify where to start in case the specific consumer group is a brand-new one.
          */
-        consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
+        consumer.setNamesrvAddr("127.0.0.1:9876");
+        consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_TIMESTAMP);
 
         /*
          * Subscribe one more topic to consume.
          */
-        consumer.subscribe(TOPIC, "*");
+        consumer.subscribe("TopicTest1234", "*");
 
         /*
          *  Register callback to execute on arrival of messages fetched from brokers.
          */
-        consumer.registerMessageListener((MessageListenerConcurrently) (msg, context) -> {
-            System.out.printf("%s Receive New Messages: %s %n", Thread.currentThread().getName(), msg);
-            return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+        consumer.registerMessageListener(new MessageListenerConcurrently() {
+
+            @Override
+            public ConsumeConcurrentlyStatus consumeMessage(List<MessageExt> msgs,
+                ConsumeConcurrentlyContext context) {
+                System.out.printf("%s Receive New Messages: %s %n", Thread.currentThread().getName(), msgs);
+                return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
+            }
         });
+
 
         /*
          *  Launch the consumer instance.
          */
         consumer.start();
-
         System.out.printf("Consumer Started.%n");
     }
 }

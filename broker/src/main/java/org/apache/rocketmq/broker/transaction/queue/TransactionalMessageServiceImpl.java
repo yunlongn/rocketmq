@@ -227,6 +227,7 @@ public class TransactionalMessageServiceImpl implements TransactionalMessageServ
                             if (!putBackHalfMsgQueue(msgExt, i)) {
                                 continue;
                             }
+                            // 消息回查，发送请求到producer 的消息检查位置
                             listener.resolveHalfMsg(msgExt);
                         } else {
                             pullResult = fillOpRemoveMap(removeMap, opQueue, pullResult.getNextBeginOffset(), halfOffset, doneOpOffset);

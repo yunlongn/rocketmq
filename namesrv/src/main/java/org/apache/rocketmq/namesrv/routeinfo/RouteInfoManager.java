@@ -656,6 +656,7 @@ public class RouteInfoManager {
     }
 
     public TopicRouteData pickupTopicRouteData(final String topic) {
+        // 初始化返回数据topicRouteData
         TopicRouteData topicRouteData = new TopicRouteData();
         boolean foundQueueData = false;
         boolean foundBrokerData = false;
@@ -666,14 +667,18 @@ public class RouteInfoManager {
         topicRouteData.setFilterServerTable(filterServerMap);
 
         try {
+            // 加读锁
             this.lock.readLock().lockInterruptibly();
+            //先获取主题对应的队列信息
             Map<String, QueueData> queueDataMap = this.topicQueueTable.get(topic);
             if (queueDataMap != null) {
+                // 把队列信息返回值
                 topicRouteData.setQueueDatas(new ArrayList<>(queueDataMap.values()));
                 foundQueueData = true;
 
                 Set<String> brokerNameSet = new HashSet<>(queueDataMap.keySet());
 
+                // 遍历队列，找出相关的所有BrokerName
                 for (String brokerName : brokerNameSet) {
                     BrokerData brokerData = this.brokerAddrTable.get(brokerName);
                     if (null == brokerData) {
@@ -689,6 +694,7 @@ public class RouteInfoManager {
                     if (filterServerTable.isEmpty()) {
                         continue;
                     }
+                    // 遍历这些BrokerName，找到对应的BrokerData，并写入返回结果中
                     for (final String brokerAddr : brokerDataClone.getBrokerAddrs().values()) {
                         BrokerAddrInfo brokerAddrInfo = new BrokerAddrInfo(brokerDataClone.getCluster(), brokerAddr);
                         List<String> filterServerList = this.filterServerTable.get(brokerAddrInfo);
@@ -700,6 +706,7 @@ public class RouteInfoManager {
         } catch (Exception e) {
             log.error("pickupTopicRouteData Exception", e);
         } finally {
+            // 释放读锁
             this.lock.readLock().unlock();
         }
 
@@ -771,6 +778,7 @@ public class RouteInfoManager {
             for (Entry<BrokerAddrInfo, BrokerLiveInfo> next : this.brokerLiveTable.entrySet()) {
                 long last = next.getValue().getLastUpdateTimestamp();
                 long timeoutMillis = next.getValue().getHeartbeatTimeoutMillis();
+                // 这个broker 两分钟都没有上传数据的话，那么视这个broker为下线
                 if ((last + timeoutMillis) < System.currentTimeMillis()) {
                     RemotingUtil.closeChannel(next.getValue().getChannel());
                     log.warn("The broker channel expired, {} {}ms", next.getKey(), timeoutMillis);

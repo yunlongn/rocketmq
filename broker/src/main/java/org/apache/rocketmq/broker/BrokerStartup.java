@@ -221,6 +221,7 @@ public class BrokerStartup {
             // remember all configs to prevent discard
             controller.getConfiguration().registerConfig(properties);
 
+            // 初始化broker
             boolean initResult = controller.initialize();
             if (!initResult) {
                 controller.shutdown();

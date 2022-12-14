@@ -75,8 +75,10 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         SendMessageContext traceContext;
         switch (request.getCode()) {
             case RequestCode.CONSUMER_SEND_MSG_BACK:
+                // 消息消费者失败了，重新发回来的处理
                 return this.consumerSendMsgBack(ctx, request);
             default:
+                // 解析请求
                 SendMessageRequestHeader requestHeader = parseRequestHeader(request);
                 if (requestHeader == null) {
                     return null;
@@ -90,6 +92,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 String owner = request.getExtFields().get(BrokerStatsManager.COMMERCIAL_OWNER);
                 traceContext.setCommercialOwner(owner);
                 try {
+                    // hook：处理发送消息前逻辑
                     this.executeSendMessageHookBefore(ctx, request, traceContext);
                 } catch (AbortProcessException e) {
                     final RemotingCommand errorResponse = RemotingCommand.createResponseCommand(e.getResponseCode(), e.getErrorMessage());
@@ -98,10 +101,13 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 }
 
                 RemotingCommand response;
+                // 是否为批量的消息
                 if (requestHeader.isBatch()) {
+                    // 处理多个消息
                     response = this.sendBatchMessage(ctx, request, traceContext, requestHeader, mappingContext,
                         (ctx1, response1) -> executeSendMessageHookAfter(response1, ctx1));
                 } else {
+                    // 处理单个消息
                     response = this.sendMessage(ctx, request, traceContext, requestHeader, mappingContext,
                         (ctx12, response12) -> executeSendMessageHookAfter(response12, ctx12));
                 }
@@ -160,8 +166,11 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         RemotingCommand request,
         MessageExt msg, TopicConfig topicConfig, Map<String, String> properties) {
         String newTopic = requestHeader.getTopic();
+        // 判断是否包含重试topic前缀(%RETRY%)
         if (null != newTopic && newTopic.startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
+            // 消费组
             String groupName = newTopic.substring(MixAll.RETRY_GROUP_TOPIC_PREFIX.length());
+            // 获取订阅组配置
             SubscriptionGroupConfig subscriptionGroupConfig =
                 this.brokerController.getSubscriptionGroupManager().findSubscriptionGroupConfig(groupName);
             if (null == subscriptionGroupConfig) {
@@ -171,14 +180,18 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 return false;
             }
 
+            // 获取订阅组配置的最大重试次数  默认:16 SubscriptionGroupConfig
             int maxReconsumeTimes = subscriptionGroupConfig.getRetryMaxTimes();
             if (request.getVersion() >= MQVersion.Version.V3_4_9.ordinal() && requestHeader.getMaxReconsumeTimes() != null) {
+                // 从请求头获取最大重试次数
                 maxReconsumeTimes = requestHeader.getMaxReconsumeTimes();
             }
             int reconsumeTimes = requestHeader.getReconsumeTimes() == null ? 0 : requestHeader.getReconsumeTimes();
             // Using '>' instead of '>=' to compatible with the case that reconsumeTimes here are increased by client.
+            // 条件满足，则已经达到最大重试次数16
             if (reconsumeTimes > maxReconsumeTimes) {
                 properties.put(MessageConst.PROPERTY_DELAY_TIME_LEVEL, "-1");
+                // 超过最大重试次数，生成死信队列topic，  生成规则: %DLQ% + groupName
                 newTopic = MixAll.getDLQTopic(groupName);
                 int queueIdInt = randomQueueId(DLQ_NUMS_PER_GROUP);
                 topicConfig = this.brokerController.getTopicConfigManager().createTopicInSendMessageBackMethod(newTopic,
@@ -189,6 +202,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 msg.setQueueId(queueIdInt);
                 msg.setDelayTimeLevel(0);
                 if (null == topicConfig) {
+                    // 不存在死信队列，返回错误信息
                     response.setCode(ResponseCode.SYSTEM_ERROR);
                     response.setRemark("topic[" + newTopic + "] not exist");
                     return false;
@@ -209,7 +223,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         final SendMessageRequestHeader requestHeader,
         final TopicQueueMappingContext mappingContext,
         final SendMessageCallback sendMessageCallback) throws RemotingCommandException {
-
+        // 初始化响应
         final RemotingCommand response = preSend(ctx, request, requestHeader);
         if (response.getCode() != -1) {
             return response;
@@ -222,6 +236,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         int queueIdInt = requestHeader.getQueueId();
         TopicConfig topicConfig = this.brokerController.getTopicConfigManager().selectTopicConfig(requestHeader.getTopic());
 
+        // 如果队列小于0，从可用队列随机选择
         if (queueIdInt < 0) {
             queueIdInt = randomQueueId(topicConfig.getWriteQueueNums());
         }
@@ -231,6 +246,8 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         msgInner.setQueueId(queueIdInt);
 
         Map<String, String> oriProps = MessageDecoder.string2messageProperties(requestHeader.getProperties());
+
+        // 非重试Topic则返回true
         if (!handleRetryAndDLQ(requestHeader, response, request, msgInner, topicConfig, oriProps)) {
             return response;
         }
@@ -275,6 +292,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         if (brokerController.getBrokerConfig().isAsyncSendEnable()) {
             CompletableFuture<PutMessageResult> asyncPutMessageFuture;
             if (sendTransactionPrepareMessage) {
+                // 事务消息处理
                 asyncPutMessageFuture = this.brokerController.getTransactionalMessageService().asyncPrepareMessage(msgInner);
             } else {
                 asyncPutMessageFuture = this.brokerController.getMessageStore().asyncPutMessage(msgInner);

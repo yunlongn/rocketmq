@@ -86,6 +86,7 @@ public class RebalancePushImpl extends RebalanceImpl {
 
     @Override
     public boolean removeUnnecessaryMessageQueue(MessageQueue mq, ProcessQueue pq) {
+        // 同步队列的消费进度，并移除之。
         this.defaultMQPushConsumerImpl.getOffsetStore().persist(mq);
         this.defaultMQPushConsumerImpl.getOffsetStore().removeOffset(mq);
         if (this.defaultMQPushConsumerImpl.isConsumeOrderly()
@@ -260,6 +261,7 @@ public class RebalancePushImpl extends RebalanceImpl {
     @Override
     public void dispatchPullRequest(final List<PullRequest> pullRequestList, final long delay) {
         for (PullRequest pullRequest : pullRequestList) {
+            // 轮训消费最开始的地方
             if (delay <= 0) {
                 this.defaultMQPushConsumerImpl.executePullRequestImmediately(pullRequest);
             } else {

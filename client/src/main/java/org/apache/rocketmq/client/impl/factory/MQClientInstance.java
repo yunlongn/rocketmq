@@ -468,6 +468,7 @@ public class MQClientInstance {
     public void sendHeartbeatToAllBrokerWithLock() {
         if (this.lockHeartbeat.tryLock()) {
             try {
+                // 发送心跳给所有的broker
                 this.sendHeartbeatToAllBroker();
                 this.uploadFilterClassSource();
             } catch (final Exception e) {

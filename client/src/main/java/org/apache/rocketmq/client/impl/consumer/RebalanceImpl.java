@@ -328,7 +328,7 @@ public abstract class RebalanceImpl {
                 // 如果是集群的消息
                 // 获取 topic 对应的 队列 和 consumer信息
                 Set<MessageQueue> mqSet = this.topicSubscribeInfoTable.get(topic);
-                // 获取所有监听了这个topic的客户端
+                // 获取所有监听了这个topic的客户端 比如说 consumerGroup 有 3 个客户端在监听着。那么这里就有三个 cid
                 List<String> cidAll = this.mQClientFactory.findConsumerIdList(topic, consumerGroup);
                 if (null == mqSet) {
                     if (!topic.startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
@@ -370,7 +370,7 @@ public abstract class RebalanceImpl {
                         allocateResultSet.addAll(allocateResult);
                     }
 
-                    // 更新消息队列
+                    // 更新消息队列 重新平衡
                     boolean changed = this.updateProcessQueueTableInRebalance(topic, allocateResultSet, isOrder);
                     if (changed) {
                         log.info(
@@ -510,7 +510,7 @@ public abstract class RebalanceImpl {
             ProcessQueue pq = next.getValue();
 
             if (mq.getTopic().equals(topic)) {
-                // 不包含的队列
+                // 找在table中的 topic 相同的队列 并且不在 mqSet 中的。  说明这个 MessageQueue 被分配 consumerGroup 其他客户端了
                 if (!mqSet.contains(mq)) {
                     pq.setDropped(true);
                     removeQueueMap.put(mq, pq);
@@ -523,7 +523,7 @@ public abstract class RebalanceImpl {
             }
         }
 
-        // remove message queues no longer belong me
+        // remove message queues no longer belong me 删除不再属于当前客户端的消息队列
         for (Entry<MessageQueue, ProcessQueue> entry : removeQueueMap.entrySet()) {
             MessageQueue mq = entry.getKey();
             ProcessQueue pq = entry.getValue();
@@ -542,6 +542,7 @@ public abstract class RebalanceImpl {
         //  拉消息请求数组
         for (MessageQueue mq : mqSet) {
             if (!this.processQueueTable.containsKey(mq)) {
+                // 如果并发进入 那么将 allMQLocked = false
                 if (isOrder && !this.lock(mq)) {
                     log.warn("doRebalance, {}, add a new mq failed, {}, because lock failed", consumerGroup, mq);
                     allMQLocked = false;

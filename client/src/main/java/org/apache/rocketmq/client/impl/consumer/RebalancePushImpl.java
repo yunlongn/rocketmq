@@ -80,7 +80,7 @@ public class RebalancePushImpl extends RebalanceImpl {
             }
         }
 
-        // notify broker
+        // notify broker 通知  broker
         this.getmQClientFactory().sendHeartbeatToAllBrokerWithLock();
     }
 
@@ -89,6 +89,7 @@ public class RebalancePushImpl extends RebalanceImpl {
         // 同步队列的消费进度，并移除之。
         this.defaultMQPushConsumerImpl.getOffsetStore().persist(mq);
         this.defaultMQPushConsumerImpl.getOffsetStore().removeOffset(mq);
+        // 如果是有序的消费
         if (this.defaultMQPushConsumerImpl.isConsumeOrderly()
             && MessageModel.CLUSTERING.equals(this.defaultMQPushConsumerImpl.messageModel())) {
             try {

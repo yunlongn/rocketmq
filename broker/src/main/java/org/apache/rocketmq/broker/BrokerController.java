@@ -426,6 +426,7 @@ public class BrokerController {
     }
 
     protected void initializeRemotingServer() throws CloneNotSupportedException {
+        // 开启 netty server 可以处理客户端所有请求，如：生产者发送消息的请求，消费者拉取消息的请求。
         this.remotingServer = new NettyRemotingServer(this.nettyServerConfig, this.clientHousekeepingService);
         NettyServerConfig fastConfig = (NettyServerConfig) this.nettyServerConfig.clone();
 
@@ -435,6 +436,7 @@ public class BrokerController {
         }
         fastConfig.setListenPort(listeningPort);
 
+        // 功能基本与remotingServer相同，唯一不同的是不可以处理消费者拉取消息的请求。 生产者的发送消息的专用server
         this.fastRemotingServer = new NettyRemotingServer(fastConfig, this.clientHousekeepingService);
     }
 
@@ -445,6 +447,7 @@ public class BrokerController {
         this.scheduledExecutorService = new ScheduledThreadPoolExecutor(1,
             new ThreadFactoryImpl("BrokerControllerScheduledThread", true, getBrokerIdentity()));
 
+        // 处理接收消息请求的处理线程池 default  `Math.min(Runtime.getRuntime().availableProcessors(), 4)`
         this.sendMessageExecutor = new BrokerFixedThreadPoolExecutor(
             this.brokerConfig.getSendMessageThreadPoolNums(),
             this.brokerConfig.getSendMessageThreadPoolNums(),
@@ -453,6 +456,7 @@ public class BrokerController {
             this.sendThreadPoolQueue,
             new ThreadFactoryImpl("SendMessageThread_", getBrokerIdentity()));
 
+        // 处理消费者拉取消息请求的线程池 `16 + Runtime.getRuntime().availableProcessors() * 2;`
         this.pullMessageExecutor = new BrokerFixedThreadPoolExecutor(
             this.brokerConfig.getPullMessageThreadPoolNums(),
             this.brokerConfig.getPullMessageThreadPoolNums(),
@@ -469,6 +473,7 @@ public class BrokerController {
             this.litePullThreadPoolQueue,
             new ThreadFactoryImpl("LitePullMessageThread_", getBrokerIdentity()));
 
+        // 处理异步消息请求的处理线程池， 上面是处理需要同步结果的消息发送，这里是不需要同步结果的消息发送 `Math.min(Runtime.getRuntime().availableProcessors(), 4)`
         this.putMessageFutureExecutor = new BrokerFixedThreadPoolExecutor(
             this.brokerConfig.getPutMessageFutureThreadPoolNums(),
             this.brokerConfig.getPutMessageFutureThreadPoolNums(),
@@ -485,6 +490,7 @@ public class BrokerController {
             this.ackThreadPoolQueue,
             new ThreadFactoryImpl("AckMessageThread_", getBrokerIdentity()));
 
+        // 查询或者查看消息处理请求的线程池
         this.queryMessageExecutor = new BrokerFixedThreadPoolExecutor(
             this.brokerConfig.getQueryMessageThreadPoolNums(),
             this.brokerConfig.getQueryMessageThreadPoolNums(),
@@ -501,6 +507,7 @@ public class BrokerController {
             this.adminBrokerThreadPoolQueue,
             new ThreadFactoryImpl("AdminBrokerThread_", getBrokerIdentity()));
 
+        // 客户端注册退出请求的线程池
         this.clientManageExecutor = new BrokerFixedThreadPoolExecutor(
             this.brokerConfig.getClientManageThreadPoolNums(),
             this.brokerConfig.getClientManageThreadPoolNums(),
@@ -509,6 +516,7 @@ public class BrokerController {
             this.clientManagerThreadPoolQueue,
             new ThreadFactoryImpl("ClientManageThread_", getBrokerIdentity()));
 
+        // 接收心跳检测请求的线程池
         this.heartbeatExecutor = new BrokerFixedThreadPoolExecutor(
             this.brokerConfig.getHeartbeatThreadPoolNums(),
             this.brokerConfig.getHeartbeatThreadPoolNums(),
@@ -517,6 +525,7 @@ public class BrokerController {
             this.heartbeatThreadPoolQueue,
             new ThreadFactoryImpl("HeartbeatThread_", true, getBrokerIdentity()));
 
+        // 消费者管理的请求的线程池
         this.consumerManageExecutor = new BrokerFixedThreadPoolExecutor(
             this.brokerConfig.getConsumerManageThreadPoolNums(),
             this.brokerConfig.getConsumerManageThreadPoolNums(),
@@ -525,6 +534,7 @@ public class BrokerController {
             this.consumerManagerThreadPoolQueue,
             new ThreadFactoryImpl("ConsumerManageThread_", true, getBrokerIdentity()));
 
+        // 处理回复消息请求线程池， 当生产者发送消息后，broker 接收该请求后，会将该消息带原封不动的返回给客户端；
         this.replyMessageExecutor = new BrokerFixedThreadPoolExecutor(
             this.brokerConfig.getProcessReplyMessageThreadPoolNums(),
             this.brokerConfig.getProcessReplyMessageThreadPoolNums(),
@@ -533,6 +543,7 @@ public class BrokerController {
             this.replyThreadPoolQueue,
             new ThreadFactoryImpl("ProcessReplyMessageThread_", getBrokerIdentity()));
 
+        // 接收结束事务消息请求的线程池
         this.endTransactionExecutor = new BrokerFixedThreadPoolExecutor(
             this.brokerConfig.getEndTransactionThreadPoolNums(),
             this.brokerConfig.getEndTransactionThreadPoolNums(),
@@ -560,6 +571,7 @@ public class BrokerController {
     protected void initializeBrokerScheduledTasks() {
         final long initialDelay = UtilAll.computeNextMorningTimeMillis() - System.currentTimeMillis();
         final long period = TimeUnit.DAYS.toMillis(1);
+        // 每日检查的定时日志 打印昨天接收消息的总数，与消费者消费消息的总数
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -571,6 +583,7 @@ public class BrokerController {
             }
         }, initialDelay, period, TimeUnit.MILLISECONDS);
 
+        // 定时刷新当前实例的的数据到  consumerOffset.json 中去
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -583,6 +596,7 @@ public class BrokerController {
             }
         }, 1000 * 10, this.brokerConfig.getFlushConsumerOffsetInterval(), TimeUnit.MILLISECONDS);
 
+        // 定时刷新当前实例的的数据到  consumerFilter.json 中去
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -597,6 +611,9 @@ public class BrokerController {
             }
         }, 1000 * 10, 1000 * 10, TimeUnit.MILLISECONDS);
 
+        // 三分钟一次 检查当前消费组消费消息的进度
+        // 超过consumerFallbehindThreshold = 1024L * 1024 * 1024 * 16配置的大小后会剔除掉该订阅组，
+        // 停止消费消息用来保护broker，因为存储消息的commitLog一个文件大小才为1024L * 1024 * 1024。
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -608,6 +625,7 @@ public class BrokerController {
             }
         }, 3, 3, TimeUnit.MINUTES);
 
+        // 打印各个队列的任务大小以及最早的放入时间
         this.scheduledExecutorService.scheduleAtFixedRate(new Runnable() {
             @Override
             public void run() {
@@ -790,6 +808,7 @@ public class BrokerController {
 
         if (result) {
 
+            // 开启 ntty 服务
             initializeRemotingServer();
 
             initializeResources();
@@ -1019,7 +1038,7 @@ public class BrokerController {
         this.remotingServer.registerProcessor(RequestCode.POLLING_INFO, this.pollingInfoProcessor, this.pullMessageExecutor);
 
         /**
-         * ReplyMessageProcessor
+         * ReplyMessageProcessor 当生产者发送消息后，broker 接收该请求后，会将该消息带原封不动的返回给客户端；
          */
 
         replyMessageProcessor.registerSendMessageHook(sendMessageHookList);
@@ -1461,6 +1480,7 @@ public class BrokerController {
     protected void startBasicService() throws Exception {
 
         if (this.messageStore != null) {
+            //启动消息存储相关的任务
             this.messageStore.start();
         }
 
@@ -1477,6 +1497,7 @@ public class BrokerController {
         }
 
         if (this.remotingServer != null) {
+            // 公共的 netty server
             this.remotingServer.start();
 
             // In test scenarios where it is up to OS to pick up an available port, set the listening port back to config
@@ -1486,6 +1507,7 @@ public class BrokerController {
         }
 
         if (this.fastRemotingServer != null) {
+            // 启动给消息发送者使用的netty服务
             this.fastRemotingServer.start();
         }
 
@@ -1512,18 +1534,22 @@ public class BrokerController {
         }
 
         if (this.fileWatchService != null) {
+            // ssl相关文件的监视器，如果ssl相关的配置文件更换，会更换netty的tls信息。
             this.fileWatchService.start();
         }
 
         if (this.pullRequestHoldService != null) {
+            // 客户端消费消息 holdService 服务。对请求hold住，等到有数据再返回
             this.pullRequestHoldService.start();
         }
 
         if (this.clientHousekeepingService != null) {
+            //启动心跳检测服务
             this.clientHousekeepingService.start();
         }
 
         if (this.filterServerManager != null) {
+            //启动消息过滤服务
             this.filterServerManager.start();
         }
 
@@ -1564,6 +1590,7 @@ public class BrokerController {
         }
 
         if (this.brokerOuterAPI != null) {
+            // broker 使用的 netty 客户端
             this.brokerOuterAPI.start();
         }
 
@@ -1571,6 +1598,8 @@ public class BrokerController {
 
         if (!isIsolated && !this.messageStoreConfig.isEnableDLegerCommitLog() && !this.messageStoreConfig.isDuplicationEnable()) {
             changeSpecialServiceStatus(this.brokerConfig.getBrokerId() == MixAll.MASTER_ID);
+
+            //如果没启动DLegerCommitLog ，就将Broker注册到NameServer上
             this.registerBrokerAll(true, false, true);
         }
 
@@ -1586,6 +1615,7 @@ public class BrokerController {
                         BrokerController.LOG.info("Skip register for broker is isolated");
                         return;
                     }
+                    // 注册数据到 namespace上 定时发送心跳
                     BrokerController.this.registerBrokerAll(true, false, brokerConfig.isForceRegister());
                 } catch (Throwable e) {
                     BrokerController.LOG.error("registerBrokerAll Exception", e);
@@ -1701,12 +1731,14 @@ public class BrokerController {
             topicConfigWrapper.setTopicConfigTable(topicConfigTable);
         }
 
+        // needRegister 检查需要注册的namespaces 发送 RequestCode.QUERY_DATA_VERSION 进行通讯
         if (forceRegister || needRegister(this.brokerConfig.getBrokerClusterName(),
             this.getBrokerAddr(),
             this.brokerConfig.getBrokerName(),
             this.brokerConfig.getBrokerId(),
             this.brokerConfig.getRegisterBrokerTimeoutMills(),
             this.brokerConfig.isInBrokerContainer())) {
+            // 发送 RequestCode.REGISTER_BROKER 进行注册
             doRegisterBrokerAll(checkOrderConfig, oneway, topicConfigWrapper);
         }
     }

@@ -62,12 +62,14 @@ public class MappedFileQueue implements Swappable {
     public void checkSelf() {
         List<MappedFile> mappedFiles = new ArrayList<>(this.mappedFiles);
         if (!mappedFiles.isEmpty()) {
+            // 遍历所有mappedFile
             Iterator<MappedFile> iterator = mappedFiles.iterator();
             MappedFile pre = null;
             while (iterator.hasNext()) {
                 MappedFile cur = iterator.next();
 
                 if (pre != null) {
+                    // 校验相邻两个文件offset差值是否为文件大小
                     if (cur.getFileFromOffset() - pre.getFileFromOffset() != this.mappedFileSize) {
                         LOG_ERROR.error("[BUG]The mappedFile queue's data is damaged, the adjacent mappedFile's offset don't match. pre file {}, cur file {}",
                             pre.getFileName(), cur.getFileName());
@@ -205,17 +207,21 @@ public class MappedFileQueue implements Swappable {
     }
 
     public MappedFile getLastMappedFile(final long startOffset, boolean needCreate) {
+        // 创建文件开始offset。-1时，不创建
         long createOffset = -1;
         MappedFile mappedFileLast = getLastMappedFile();
 
+        // 一个映射文件都不存在
         if (mappedFileLast == null) {
             createOffset = startOffset - (startOffset % this.mappedFileSize);
         }
 
+        // 最后一个文件已满
         if (mappedFileLast != null && mappedFileLast.isFull()) {
             createOffset = mappedFileLast.getFileFromOffset() + this.mappedFileSize;
         }
 
+        // 创建文件
         if (createOffset != -1 && needCreate) {
             return tryCreateMappedFile(createOffset);
         }
@@ -524,10 +530,13 @@ public class MappedFileQueue implements Swappable {
 
     public boolean flush(final int flushLeastPages) {
         boolean result = true;
+        // 获取最后一个刷盘的位置。
         MappedFile mappedFile = this.findMappedFileByOffset(this.flushedWhere, this.flushedWhere == 0);
         if (mappedFile != null) {
             long tmpTimeStamp = mappedFile.getStoreTimestamp();
+            // 刷盘 执行 fileChannel.force 强行把数据写入磁盘中。
             int offset = mappedFile.flush(flushLeastPages);
+            // 目前实例在磁盘中的offset位置 + 加上本次刷盘的 offset
             long where = mappedFile.getFileFromOffset() + offset;
             result = where == this.flushedWhere;
             this.flushedWhere = where;
@@ -561,10 +570,14 @@ public class MappedFileQueue implements Swappable {
      */
     public MappedFile findMappedFileByOffset(final long offset, final boolean returnFirstOnNotFound) {
         try {
+            //获取队列中第一个映射文件
             MappedFile firstMappedFile = this.getFirstMappedFile();
+            //获取队列中最后一个映射文件
             MappedFile lastMappedFile = this.getLastMappedFile();
             if (firstMappedFile != null && lastMappedFile != null) {
+                // 如果offset不在索引文件的offset范围内
                 if (offset < firstMappedFile.getFileFromOffset() || offset >= lastMappedFile.getFileFromOffset() + this.mappedFileSize) {
+                    // 找不到文件打印日志。 返回一个空值
                     LOG_ERROR.warn("Offset not matched. Request offset: {}, firstOffset: {}, lastOffset: {}, mappedFileSize: {}, mappedFiles count: {}",
                         offset,
                         firstMappedFile.getFileFromOffset(),
@@ -572,18 +585,22 @@ public class MappedFileQueue implements Swappable {
                         this.mappedFileSize,
                         this.mappedFiles.size());
                 } else {
+                    //  找到映射文件在队列中的索引位置
                     int index = (int) ((offset / this.mappedFileSize) - (firstMappedFile.getFileFromOffset() / this.mappedFileSize));
                     MappedFile targetFile = null;
                     try {
+                        //   获取索引文件
                         targetFile = this.mappedFiles.get(index);
                     } catch (Exception ignored) {
                     }
 
                     if (targetFile != null && offset >= targetFile.getFileFromOffset()
                         && offset < targetFile.getFileFromOffset() + this.mappedFileSize) {
+                        //  offset在目标文件的起始offset和结束offset范围内
                         return targetFile;
                     }
 
+                    // 如果按索引在队列中找不到映射文件就遍历队列查找映射文件
                     for (MappedFile tmpMappedFile : this.mappedFiles) {
                         if (offset >= tmpMappedFile.getFileFromOffset()
                             && offset < tmpMappedFile.getFileFromOffset() + this.mappedFileSize) {
@@ -592,6 +609,7 @@ public class MappedFileQueue implements Swappable {
                     }
                 }
 
+                // 如果offset=0获取队列中第一个映射文件，个人感觉这个逻辑是否放在前面判断更为合理，还是放在这里另有深意
                 if (returnFirstOnNotFound) {
                     return firstMappedFile;
                 }

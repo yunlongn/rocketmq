@@ -256,8 +256,11 @@ public class PopMessageProcessor implements NettyRequestProcessor {
 
     private RemotingCommand processRequest(final Channel channel, RemotingCommand request)
         throws RemotingCommandException {
+        // 创建服务器端对本请求的“响应对象”，注意：header 类型 PopMessageResponseHeader
         RemotingCommand response = RemotingCommand.createResponseCommand(PopMessageResponseHeader.class);
+        // 获取response对象的 header
         final PopMessageResponseHeader responseHeader = (PopMessageResponseHeader) response.readCustomHeader();
+        // 从request请求中，解析出“requestHeader”对象，类型是：PopMessageRequestHeader
         final PopMessageRequestHeader requestHeader =
             (PopMessageRequestHeader) request.decodeCommandCustomHeader(PopMessageRequestHeader.class);
         StringBuilder startOffsetInfo = new StringBuilder(64);
@@ -270,24 +273,28 @@ public class PopMessageProcessor implements NettyRequestProcessor {
         brokerController.getConsumerManager().compensateBasicConsumerInfo(requestHeader.getConsumerGroup(),
             ConsumeType.CONSUME_POP, MessageModel.CLUSTERING);
 
+        // 设置响应对象的opaque 为 request请求的 opaque，为什么要设置？
+        // 客户端需要根据 response  opaque 找到 ResponseFuture 然后完成后面的事情。
         response.setOpaque(request.getOpaque());
 
         if (brokerController.getBrokerConfig().isEnablePopLog()) {
             POP_LOGGER.info("receive PopMessage request command, {}", request);
         }
-
+        // 到这个位置的时候检查是否响应超时，如果超时，设置响应对象的code为：POLLING_TIMEOUT
         if (requestHeader.isTimeoutTooMuch()) {
             response.setCode(ResponseCode.POLLING_TIMEOUT);
             response.setRemark(String.format("the broker[%s] poping message is timeout too much",
                 this.brokerController.getBrokerConfig().getBrokerIP1()));
             return response;
         }
+        //  校验服务器端是否可读
         if (!PermName.isReadable(this.brokerController.getBrokerConfig().getBrokerPermission())) {
             response.setCode(ResponseCode.NO_PERMISSION);
             response.setRemark(String.format("the broker[%s] poping message is forbidden",
                 this.brokerController.getBrokerConfig().getBrokerIP1()));
             return response;
         }
+        // 最大 POP 消息数不能大于 32
         if (requestHeader.getMaxMsgNums() > 32) {
             response.setCode(ResponseCode.SYSTEM_ERROR);
             response.setRemark(String.format("the broker[%s] poping message's num is greater than 32",
@@ -295,6 +302,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
             return response;
         }
 
+        //每个主题都会创建TopicConfig对象 检查 topic 是否存在
         TopicConfig topicConfig =
             this.brokerController.getTopicConfigManager().selectTopicConfig(requestHeader.getTopic());
         if (null == topicConfig) {
@@ -306,6 +314,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
             return response;
         }
 
+        //topic权限是否可读
         if (!PermName.isReadable(topicConfig.getPerm())) {
             response.setCode(ResponseCode.NO_PERMISSION);
             response.setRemark("the topic[" + requestHeader.getTopic() + "] peeking message is forbidden");
@@ -418,6 +427,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
             // read all queue
             for (int i = 0; i < topicConfig.getReadQueueNums(); i++) {
                 int queueId = (randomQ + i) % topicConfig.getReadQueueNums();
+                // thenCompose 把所有的 queue 连接起来
                 getMessageFuture = getMessageFuture.thenCompose(restNum -> popMsgFromQueue(false, getMessageResult, requestHeader, queueId, restNum, reviveQid, channel, popTime, finalMessageFilter,
                     startOffsetInfo, msgOffsetInfo, finalOrderCountInfo));
             }
@@ -522,6 +532,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
         StringBuilder msgOffsetInfo, StringBuilder orderCountInfo) {
         String topic = isRetry ? KeyBuilder.buildPopRetryTopic(requestHeader.getTopic(),
             requestHeader.getConsumerGroup()) : requestHeader.getTopic();
+        // 当前线程 锁定当前的 queueId 这么只有一个消费者能消费到指定范围的数据
         String lockKey =
             topic + PopAckConstants.SPLIT + requestHeader.getConsumerGroup() + PopAckConstants.SPLIT + queueId;
         boolean isOrder = requestHeader.isOrder();
@@ -533,7 +544,6 @@ public class PopMessageProcessor implements NettyRequestProcessor {
             future.complete(restNum);
             return future;
         }
-
         try {
             future.whenComplete((result, throwable) -> queueLockManager.unLock(lockKey));
             offset = getPopOffset(topic, requestHeader.getConsumerGroup(), queueId, requestHeader.getInitMode(),
@@ -618,6 +628,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
                         this.brokerController.getConsumerOffsetManager().commitOffset(channel.remoteAddress().toString(),
                             requestHeader.getConsumerGroup(), topic, queueId, finalOffset);
                     } else {
+                        // Broker 收到消费者发来的 ACK 后，会把 CheckPoint 从缓存中移除。 否则加入重试队列
                         appendCheckPoint(requestHeader, topic, reviveQid, queueId, finalOffset, result, popTime, this.brokerController.getBrokerConfig().getBrokerName());
                     }
                     ExtraInfoUtil.buildStartOffsetInfo(startOffsetInfo, isRetry, queueId, finalOffset);
@@ -814,7 +825,7 @@ public class PopMessageProcessor implements NettyRequestProcessor {
         for (Long msgQueueOffset : getMessageTmpResult.getMessageQueueOffset()) {
             ck.addDiff((int) (msgQueueOffset - offset));
         }
-
+        // 加入ack监听。 如果超时消费者没有返回ack  那么放入重试队列
         final boolean addBufferSuc = this.popBufferMergeService.addCk(
             ck, reviveQid, -1, getMessageTmpResult.getNextBeginOffset()
         );

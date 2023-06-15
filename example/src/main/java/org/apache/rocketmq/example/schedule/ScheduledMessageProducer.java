@@ -32,17 +32,18 @@ public class ScheduledMessageProducer {
         DefaultMQProducer producer = new DefaultMQProducer(PRODUCER_GROUP);
 
         // Uncomment the following line while debugging, namesrvAddr should be set to your local address
-//        producer.setNamesrvAddr(DEFAULT_NAMESRVADDR);
+        producer.setNamesrvAddr(DEFAULT_NAMESRVADDR);
 
         // Launch producer
         producer.start();
-        int totalMessagesToSend = 100;
+        int totalMessagesToSend = 1;
         for (int i = 0; i < totalMessagesToSend; i++) {
             Message message = new Message(TOPIC, ("Hello scheduled message " + i).getBytes(StandardCharsets.UTF_8));
             // This message will be delivered to consumer 10 seconds later.
             message.setDelayTimeLevel(3);
             // Send the message
             SendResult result = producer.send(message);
+            Thread.sleep(i * 1000);
             System.out.print(result);
         }
 

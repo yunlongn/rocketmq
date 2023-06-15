@@ -30,27 +30,39 @@ public class Producer {
     public static void main(String[] args) throws MQClientException {
         try {
             DefaultMQProducer producer = new DefaultMQProducer("please_rename_unique_group_name");
+            producer.setNamesrvAddr("127.0.0.1:9876");
             producer.start();
 
             String[] tags = new String[] {"TagA", "TagB", "TagC", "TagD", "TagE"};
-            for (int i = 0; i < 100; i++) {
-                int orderId = i % 10;
-                Message msg =
-                    new Message("TopicTestjjj", tags[i % tags.length], "KEY" + i,
-                        ("Hello RocketMQ " + i).getBytes(RemotingHelper.DEFAULT_CHARSET));
-                SendResult sendResult = producer.send(msg, new MessageQueueSelector() {
+            for (int i = 0; i < 1000; i++) {
+                int finalI = i;
+                new Thread() {
                     @Override
-                    public MessageQueue select(List<MessageQueue> mqs, Message msg, Object arg) {
-                        Integer id = (Integer) arg;
-                        int index = id % mqs.size();
-                        return mqs.get(index);
-                    }
-                }, orderId);
+                    public void run() {
+                        try {
+                            int orderId = finalI % 10;
+                            Message msg =
+                                    new Message("TopicTestjjj", tags[finalI % tags.length], "KEY" + finalI,
+                                            ("Hello RocketMQ " + finalI).getBytes(RemotingHelper.DEFAULT_CHARSET));
+                            SendResult sendResult = producer.send(msg, new MessageQueueSelector() {
+                                @Override
+                                public MessageQueue select(List<MessageQueue> mqs, Message msg, Object arg) {
+                                    Integer id = (Integer) arg;
+                                    int index = id % mqs.size();
+                                    return mqs.get(index);
+                                }
+                            }, orderId);
 
-                System.out.printf("%s%n", sendResult);
+                            System.out.printf("%s%n", sendResult);
+                        } catch (Exception e) {
+                            e.printStackTrace();
+                        }
+                    }
+                }.start();
+
             }
 
-            producer.shutdown();
+//            producer.shutdown();
         } catch (Exception e) {
             e.printStackTrace();
             throw new MQClientException(e.getMessage(), null);

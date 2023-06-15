@@ -128,6 +128,7 @@ public abstract class AbstractSendMessageProcessor implements NettyRequestProces
             return response;
         }
 
+        // 设置新的Topic  %RETRY%
         String newTopic = MixAll.getRetryTopic(requestHeader.getGroup());
         int queueIdInt = this.random.nextInt(subscriptionGroupConfig.getRetryQueueNums());
 
@@ -178,6 +179,9 @@ public abstract class AbstractSendMessageProcessor implements NettyRequestProces
         }
 
         boolean isDLQ = false;
+
+        // 超过最大消费次数16次，或者 delayLevel < 0
+        // 则将消息投递到死信队列
         if (msgExt.getReconsumeTimes() >= maxReconsumeTimes
             || delayLevel < 0) {
 
@@ -233,6 +237,7 @@ public abstract class AbstractSendMessageProcessor implements NettyRequestProces
         boolean succeeded = false;
 
         // Put retry topic to master message store
+        // 存到 messageStore 里边 然后 ScheduleMessageService 扫描执行发送延时消息
         PutMessageResult putMessageResult = masterBroker.getMessageStore().putMessage(msgInner);
         if (putMessageResult != null) {
             String commercialOwner = request.getExtFields().get(BrokerStatsManager.COMMERCIAL_OWNER);
@@ -542,6 +547,7 @@ public abstract class AbstractSendMessageProcessor implements NettyRequestProces
     }
 
     public void executeSendMessageHookBefore(SendMessageContext context) {
+        // 设置 Hook的环绕
         if (hasSendMessageHook()) {
             for (SendMessageHook hook : this.sendMessageHookList) {
                 try {

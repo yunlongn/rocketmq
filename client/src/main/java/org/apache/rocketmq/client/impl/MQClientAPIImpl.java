@@ -856,6 +856,7 @@ public class MQClientAPIImpl implements NameServerUpdateCallback {
                 RemotingCommand response = responseFuture.getResponseCommand();
                 if (response != null) {
                     try {
+                        // 将返回的消息封装成 PopResult
                         PopResult
                             popResult = MQClientAPIImpl.this.processPopResponse(brokerName, response, requestHeader.getTopic(), requestHeader);
                         assert popResult != null;
@@ -1059,10 +1060,16 @@ public class MQClientAPIImpl implements NameServerUpdateCallback {
             default:
                 throw new MQBrokerException(response.getCode(), response.getRemark());
         }
-
+        System.out.println("msgFoundList " + msgFoundList.size());
+        // ResponseCode.SUCCESS
         PopResult popResult = new PopResult(popStatus, msgFoundList);
+        // 反序列化 PopMessageResponseHeader.class
         PopMessageResponseHeader responseHeader = (PopMessageResponseHeader) response.decodeCommandCustomHeader(PopMessageResponseHeader.class);
+        // 总共有多少数据
         popResult.setRestNum(responseHeader.getRestNum());
+        if (msgFoundList.size() == 0 && popResult.getRestNum() > 0) {
+            System.out.println("有数据但是被锁定了");
+        }
         // it is a pop command if pop time greater than 0, we should set the check point info to extraInfo field
         if (popStatus == PopStatus.FOUND) {
             Map<String, Long> startOffsetInfo = null;
@@ -1125,6 +1132,7 @@ public class MQClientAPIImpl implements NameServerUpdateCallback {
                 }
                 messageExt.setBrokerName(brokerName);
                 messageExt.setTopic(NamespaceUtil.withoutNamespace(topic, this.clientConfig.getNamespace()));
+                System.out.println("messageExt " + messageExt.getMsgId());
             }
         }
         return popResult;

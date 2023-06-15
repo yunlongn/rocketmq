@@ -235,9 +235,11 @@ public abstract class RebalanceImpl {
     }
 
     public boolean doRebalance(final boolean isOrder) {
+        // 拿到所有监听的topic
         boolean balanced = true;
         Map<String, SubscriptionData> subTable = this.getSubscriptionInner();
         if (subTable != null) {
+            // 循环所有的监听数据
             for (final Map.Entry<String, SubscriptionData> entry : subTable.entrySet()) {
                 final String topic = entry.getKey();
                 try {
@@ -300,6 +302,8 @@ public abstract class RebalanceImpl {
         boolean balanced = true;
         switch (messageModel) {
             case BROADCASTING: {
+                // 如果是广播的消息
+                // 拿到所有的 MessageQueue
                 Set<MessageQueue> mqSet = this.topicSubscribeInfoTable.get(topic);
                 if (mqSet != null) {
                     boolean changed = this.updateProcessQueueTableInRebalance(topic, mqSet, isOrder);
@@ -316,7 +320,10 @@ public abstract class RebalanceImpl {
                 break;
             }
             case CLUSTERING: {
+                // 如果是集群的消息
+                // 获取 topic 对应的 队列 和 consumer信息
                 Set<MessageQueue> mqSet = this.topicSubscribeInfoTable.get(topic);
+                // 获取所有监听了这个topic的客户端 比如说 consumerGroup 有 3 个客户端在监听着。那么这里就有三个 cid
                 List<String> cidAll = this.mQClientFactory.findConsumerIdList(topic, consumerGroup);
                 if (null == mqSet) {
                     if (!topic.startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
@@ -330,14 +337,17 @@ public abstract class RebalanceImpl {
                 }
 
                 if (mqSet != null && cidAll != null) {
+                    // 排序 消息队列 和 消费者数组。因为是在Client进行分配队列，排序后，各Client的顺序才能保持一致。
                     List<MessageQueue> mqAll = new ArrayList<>();
                     mqAll.addAll(mqSet);
 
                     Collections.sort(mqAll);
+                    // 对传入的 cidAll 参数必须进行排序的原因。如果不排序，Consumer 在本地计算出来的 index 无法一致，影响计算结果。
                     Collections.sort(cidAll);
 
                     AllocateMessageQueueStrategy strategy = this.allocateMessageQueueStrategy;
 
+                    // 根据 队列分配策略 MessageQueue 分配消息队列 负载均衡均分到所有的消费者上
                     List<MessageQueue> allocateResult = null;
                     try {
                         allocateResult = strategy.allocate(
@@ -355,6 +365,7 @@ public abstract class RebalanceImpl {
                         allocateResultSet.addAll(allocateResult);
                     }
 
+                    // 更新消息队列 重新平衡
                     boolean changed = this.updateProcessQueueTableInRebalance(topic, allocateResultSet, isOrder);
                     if (changed) {
                         log.info(
@@ -470,10 +481,21 @@ public abstract class RebalanceImpl {
         }
     }
 
+
+    /**
+     *  当负载均衡时，更新 消息处理队列
+     *   - 移除 在processQueueTable && 不存在于 mqSet 里的消息队列
+     *   - 增加 不在processQueueTable && 存在于 mqSet 里的消息队列
+     * @param topic Topic
+     * @param mqSet 负载均衡结果后的消息队列数组
+     * @param isOrder 是否顺序
+     * @return 是否变更
+     */
     private boolean updateProcessQueueTableInRebalance(final String topic, final Set<MessageQueue> mqSet,
         final boolean isOrder) {
         boolean changed = false;
 
+        // 移除 在processQueueTable && 不存在于 mqSet 里的消息队列
         // drop process queues no longer belong me
         HashMap<MessageQueue, ProcessQueue> removeQueueMap = new HashMap<>(this.processQueueTable.size());
         Iterator<Entry<MessageQueue, ProcessQueue>> it = this.processQueueTable.entrySet().iterator();
@@ -483,6 +505,7 @@ public abstract class RebalanceImpl {
             ProcessQueue pq = next.getValue();
 
             if (mq.getTopic().equals(topic)) {
+                // 找在table中的 topic 相同的队列 并且不在 mqSet 中的。  说明这个 MessageQueue 被分配 consumerGroup 其他客户端了
                 if (!mqSet.contains(mq)) {
                     pq.setDropped(true);
                     removeQueueMap.put(mq, pq);
@@ -495,7 +518,7 @@ public abstract class RebalanceImpl {
             }
         }
 
-        // remove message queues no longer belong me
+        // remove message queues no longer belong me 删除不再属于当前客户端的消息队列
         for (Entry<MessageQueue, ProcessQueue> entry : removeQueueMap.entrySet()) {
             MessageQueue mq = entry.getKey();
             ProcessQueue pq = entry.getValue();
@@ -509,9 +532,12 @@ public abstract class RebalanceImpl {
 
         // add new message queue
         boolean allMQLocked = true;
+        //  增加 不在processQueueTable && 存在于mqSet 里的消息队列。
         List<PullRequest> pullRequestList = new ArrayList<>();
+        //  拉消息请求数组
         for (MessageQueue mq : mqSet) {
             if (!this.processQueueTable.containsKey(mq)) {
+                // 如果并发进入 那么将 allMQLocked = false
                 if (isOrder && !this.lock(mq)) {
                     log.warn("doRebalance, {}, add a new mq failed, {}, because lock failed", consumerGroup, mq);
                     allMQLocked = false;
@@ -547,6 +573,7 @@ public abstract class RebalanceImpl {
             mQClientFactory.rebalanceLater(500);
         }
 
+        // 发起消息拉取请求 延迟500毫秒进行拉取
         this.dispatchPullRequest(pullRequestList, 500);
 
         return changed;

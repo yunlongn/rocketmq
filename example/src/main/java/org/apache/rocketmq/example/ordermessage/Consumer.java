@@ -29,14 +29,26 @@ import org.apache.rocketmq.common.message.MessageExt;
 public class Consumer {
 
     public static void main(String[] args) throws MQClientException {
-        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("please_rename_unique_group_name_3");
+        DefaultMQPushConsumer consumer = new DefaultMQPushConsumer("please_rename_unique_group_name");
 
         consumer.setConsumeFromWhere(ConsumeFromWhere.CONSUME_FROM_FIRST_OFFSET);
 
-        consumer.subscribe("TopicTest", "TagA || TagC || TagD");
+        consumer.subscribe("TopicTestjjj", "TagA || TagC || TagD");
+        consumer.setNamesrvAddr("127.0.0.1:9876");
 
         consumer.registerMessageListener(new MessageListenerOrderly() {
             AtomicLong consumeTimes = new AtomicLong(0);
+            public static final String CONSUMER_GROUP = "CID_JODIE_1";
+            public static final String TOPIC = "TopicTest";    // Or use AdminTools directly: mqadmin setConsumeMode -c cluster -t topic -g group -m POP -n 8   
+            // private static void switchPop() throws Exception {      
+            // DefaultMQAdminExt mqAdminExt = new DefaultMQAdminExt();      
+            // mqAdminExt.start();       
+            // ClusterInfo clusterInfo = mqAdminExt.examineBrokerClusterInfo();    
+            // Set<String> brokerAddrs = clusterInfo.getBrokerAddrTable().values().stream().map(BrokerData::selectBrokerAddr).collect(Collectors.toSet());      
+            // for (String brokerAddr : brokerAddrs) {         
+            // mqAdminExt.setMessageRequestMode(brokerAddr, TOPIC, CONSUMER_GROUP, MessageRequestMode.POP, 8, 3_000);     
+            // }  
+            // }
 
             @Override
             public ConsumeOrderlyStatus consumeMessage(List<MessageExt> msgs, ConsumeOrderlyContext context) {

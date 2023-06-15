@@ -30,8 +30,8 @@ import org.apache.rocketmq.remoting.protocol.route.BrokerData;
 import org.apache.rocketmq.tools.admin.DefaultMQAdminExt;
 
 public class PopConsumer {
-    public static final String TOPIC = "TopicTest";
-    public static final String CONSUMER_GROUP = "CID_JODIE_1";
+    public static final String TOPIC = "TopicTestjjj";
+    public static final String CONSUMER_GROUP = "please_rename_unique_group_name";
     public static void main(String[] args) throws Exception {
         switchPop();
         DefaultMQPushConsumer consumer = new DefaultMQPushConsumer(CONSUMER_GROUP);
@@ -44,12 +44,14 @@ public class PopConsumer {
                 return ConsumeConcurrentlyStatus.CONSUME_SUCCESS;
             }
         });
+        consumer.setNamesrvAddr("127.0.0.1:9876");
         consumer.setClientRebalance(false);
         consumer.start();
         System.out.printf("Consumer Started.%n");
     }
     private static void switchPop() throws Exception {
         DefaultMQAdminExt mqAdminExt = new DefaultMQAdminExt();
+        mqAdminExt.setNamesrvAddr("127.0.0.1:9876");
         mqAdminExt.start();
         List<BrokerData> brokerDatas = mqAdminExt.examineTopicRouteInfo(TOPIC).getBrokerDatas();
         for (BrokerData brokerData : brokerDatas) {

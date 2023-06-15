@@ -854,9 +854,11 @@ public class CommitLog implements Swappable {
                     return CompletableFuture.completedFuture(new PutMessageResult(PutMessageStatus.CREATE_MAPPED_FILE_FAILED, null));
                 }
 
+                // 存储消息
                 result = mappedFile.appendMessage(msg, this.appendMessageCallback, putMessageContext);
                 switch (result.getStatus()) {
                     case PUT_OK:
+                        // 当文件尾时，获取新的映射文件，并进行插入
                         onCommitLogAppend(msg, result, mappedFile);
                         break;
                     case END_OF_FILE:
@@ -1095,7 +1097,10 @@ public class CommitLog implements Swappable {
 
     private CompletableFuture<PutMessageResult> handleDiskFlushAndHA(PutMessageResult putMessageResult,
         MessageExt messageExt, int needAckNums, boolean needHandleHA) {
+
+        // 是否进行刷盘
         CompletableFuture<PutMessageStatus> flushResultFuture = handleDiskFlush(putMessageResult.getAppendMessageResult(), messageExt);
+        // 如果是同步Master，同步到从节点
         CompletableFuture<PutMessageStatus> replicaResultFuture;
         if (!needHandleHA) {
             replicaResultFuture = CompletableFuture.completedFuture(PutMessageStatus.PUT_OK);
@@ -1103,6 +1108,7 @@ public class CommitLog implements Swappable {
             replicaResultFuture = handleHA(putMessageResult.getAppendMessageResult(), putMessageResult, needAckNums);
         }
 
+        // 进行两个 CompletableFuture 的等待
         return flushResultFuture.thenCombine(replicaResultFuture, (flushStatus, replicaStatus) -> {
             if (flushStatus != PutMessageStatus.PUT_OK) {
                 putMessageResult.setPutMessageStatus(flushStatus);
@@ -1829,9 +1835,12 @@ public class CommitLog implements Swappable {
         private final FlushCommitLogService commitRealTimeService;
 
         public DefaultFlushManager() {
+            // 刷盘策略
             if (FlushDiskType.SYNC_FLUSH == CommitLog.this.defaultMessageStore.getMessageStoreConfig().getFlushDiskType()) {
+                // 同步刷盘
                 this.flushCommitLogService = new CommitLog.GroupCommitService();
             } else {
+                // 异步刷盘
                 this.flushCommitLogService = new CommitLog.FlushRealTimeService();
             }
 
@@ -1849,9 +1858,12 @@ public class CommitLog implements Swappable {
         public void handleDiskFlush(AppendMessageResult result, PutMessageResult putMessageResult,
             MessageExt messageExt) {
             // Synchronization flush
+            // 如果是同步Master，同步到从节点
             if (FlushDiskType.SYNC_FLUSH == CommitLog.this.defaultMessageStore.getMessageStoreConfig().getFlushDiskType()) {
                 final GroupCommitService service = (GroupCommitService) this.flushCommitLogService;
+                // 是否同步存储消息。 如果是的话需要发起消息请求。如果不是的话直接跳出
                 if (messageExt.isWaitStoreMsgOK()) {
+                    // 构建同步到从节点的请求
                     GroupCommitRequest request = new GroupCommitRequest(result.getWroteOffset() + result.getWroteBytes(), CommitLog.this.defaultMessageStore.getMessageStoreConfig().getSyncFlushTimeout());
                     service.putRequest(request);
                     CompletableFuture<PutMessageStatus> flushOkFuture = request.future();

@@ -933,6 +933,7 @@ public class DefaultMQPushConsumer extends ClientConfig implements MQPushConsume
     }
 
     public long getPopInvisibleTime() {
+        // 消息不可见时间
         return popInvisibleTime;
     }
 

@@ -112,6 +112,7 @@ public class DefaultPullMessageResultHandler implements PullMessageResultHandler
 
         switch (response.getCode()) {
             case ResponseCode.SUCCESS:
+                //成功找到消息就写回客户端，并统计获取本次的指标
                 this.brokerController.getBrokerStatsManager().incGroupGetNums(requestHeader.getConsumerGroup(), requestHeader.getTopic(),
                     getMessageResult.getMessageCount());
 
@@ -136,6 +137,7 @@ public class DefaultPullMessageResultHandler implements PullMessageResultHandler
                     return null;
                 }
 
+                // Y：需要拷贝到用户态下的heap，然后再copy到内核态的socket，需要开销。N：zero copy-FileRegion。
                 if (this.brokerController.getBrokerConfig().isTransferMsgByHeap()) {
 
                     final long beginTimeMills = this.brokerController.getMessageStore().now();
@@ -173,23 +175,46 @@ public class DefaultPullMessageResultHandler implements PullMessageResultHandler
                 final boolean hasSuspendFlag = PullSysFlag.hasSuspendFlag(requestHeader.getSysFlag());
                 final long suspendTimeoutMillisLong = hasSuspendFlag ? requestHeader.getSuspendTimeoutMillis() : 0;
 
+                // 大部分情况下都是 pullRequest.offset  ==  queue.maxOffset (客户端消费进度和服务器消息进度持平了)
+                // queue maxOffset 计算方式： dataSize / unit_size(20) => 得出来的结果
+                // 举例子，当dataSize 内存储一条 CQData 时， dataSize = 20
+                // dataSize / unit_size(20) => 1
+                // 当客户端 offset == 1 时，来到服务器拉消息，getMessage(..)方法 首先查询 CQ 数据，
+                // offset * unit_size => 20 这个物理位点
+                // 到该位点 查询数据，肯定得到 null，因为CQ的有效数据范围 [0,20]
+                // 所以，这种情况下 状态为 ：PULL_NOT_FOUND
+                // 这里需要进行长轮询，不然的话，直接返回给客户端，客户单那边逻辑 会再次立马发起 pull 请求，
+                // 这样会频繁拉取服务器，导致 服务器 压力很大...最好的办法就是长轮询。
+
+                // 条件成立：说明本次请求允许长轮询
+                // （注意brokerAllowSuspend，它是由重载的方法 传的 true，当长轮询结束时 再次 执行 processRequest的时候，该参数传的是 false）
+                // 也就是每次pull请求，至多在服务器端 长轮询 控制一次
                 if (brokerAllowSuspend && hasSuspendFlag) {
+                    // 获取长轮询时间 15000 毫秒
                     long pollingTimeMills = suspendTimeoutMillisLong;
                     if (!this.brokerController.getBrokerConfig().isLongPollingEnable()) {
                         pollingTimeMills = this.brokerController.getBrokerConfig().getShortPollingTimeMills();
                     }
 
+                    // 拉消息请求的“主题”
                     String topic = requestHeader.getTopic();
+                    // 拉消息请求的“偏移量”
                     long offset = requestHeader.getQueueOffset();
+                    // 拉消息请求的“队列ID”
                     int queueId = requestHeader.getQueueId();
+                    // 创建 长轮询 pullRequest 对象
                     PullRequest pullRequest = new PullRequest(request, channel, pollingTimeMills,
                         this.brokerController.getMessageStore().now(), offset, subscriptionData, messageFilter);
+                    // 将“长轮询pullRequest”对象 交给 长轮询服务
                     this.brokerController.getPullRequestHoldService().suspendPullRequest(topic, queueId, pullRequest);
+                    // 将response 设置为了 null ，设置成null之后，外层 requestTask 拿到的结果就是 null，
+                    // 它是null的话，requestTask 内部的callBack 就不会给客户端发送任何数据了..
                     return null;
                 }
             case ResponseCode.PULL_RETRY_IMMEDIATELY:
                 break;
             case ResponseCode.PULL_OFFSET_MOVED:
+                // 用于指标统计
                 if (this.brokerController.getMessageStoreConfig().getBrokerRole() != BrokerRole.SLAVE
                     || this.brokerController.getMessageStoreConfig().isOffsetCheckInSlave()) {
                     MessageQueue mq = new MessageQueue();

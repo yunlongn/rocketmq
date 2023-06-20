@@ -563,6 +563,7 @@ public class MappedFileQueue implements Swappable {
 
     /**
      * Finds a mapped file by offset.
+     * 按偏移量查找映射文件
      *
      * @param offset Offset.
      * @param returnFirstOnNotFound If the mapped file is not found, then return the first one.

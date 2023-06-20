@@ -438,7 +438,7 @@ public class ScheduleMessageService extends ConfigManager {
         }
 
         public void executeOnTimeup() {
-            // 根据延时级别，获取TOPIC 为 SCHEDULE_TOPIC_XXXX 的队列
+            // 根据延时级别，获取TOPIC 为 SCHEDULE_TOPIC_XXXX 的队列 找到延时级别对应的队列
             ConsumeQueueInterface cq =
                 ScheduleMessageService.this.brokerController.getMessageStore().getConsumeQueue(TopicValidator.RMQ_SYS_SCHEDULE_TOPIC,
                     delayLevel2QueueId(delayLevel));
@@ -449,7 +449,7 @@ public class ScheduleMessageService extends ConfigManager {
                 return;
             }
 
-            // 找到延时级别对应的队列
+            // 根据offset 获取指定 CqUnit 数据
             ReferredIterator<CqUnit> bufferCQ = cq.iterateFrom(this.offset);
             if (bufferCQ == null) {
                 long resetOffset;
@@ -510,7 +510,6 @@ public class ScheduleMessageService extends ConfigManager {
                         // 因为他比较先进来。那么他一定是最早出去的
                         this.scheduleNextTimerTask(currOffset, DELAY_FOR_A_WHILE);
                         ScheduleMessageService.this.updateOffset(this.delayLevel, currOffset);
-                        System.out.println("delayLevel " + delayLevel + " countdown " + tagsCode + " deliverTimestamp " + deliverTimestamp  + " countdown "+ countdown);
                         return;
                     }
 
@@ -520,7 +519,7 @@ public class ScheduleMessageService extends ConfigManager {
                         continue;
                     }
 
-                    // 发送消息
+                    // 发送消息 找到消息真实的topic 和 queueId发到队列里面去
                     MessageExtBrokerInner msgInner = ScheduleMessageService.this.messageTimeup(msgExt);
                     if (TopicValidator.RMQ_SYS_TRANS_HALF_TOPIC.equals(msgInner.getTopic())) {
                         log.error("[BUG] the real topic of schedule msg is {}, discard the msg. msg={}",
@@ -561,6 +560,7 @@ public class ScheduleMessageService extends ConfigManager {
 
         private boolean syncDeliver(MessageExtBrokerInner msgInner, String msgId, long offset, long offsetPy,
             int sizePy) {
+            // 将延迟消息投递到 topic 上
             PutResultProcess resultProcess = deliverMessage(msgInner, msgId, offset, offsetPy, sizePy, false);
             PutMessageResult result = resultProcess.get();
             boolean sendStatus = result != null && result.getPutMessageStatus() == PutMessageStatus.PUT_OK;

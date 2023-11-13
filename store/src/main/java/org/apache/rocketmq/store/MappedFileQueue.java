@@ -372,39 +372,56 @@ public class MappedFileQueue implements Swappable {
 
         }
     }
-
+    /**
+     * 根据时间删除过期文件
+     * @param expiredTime 保留时长  一般是 72
+     * @param deleteFilesInterval 删除间隔 100
+     * @param intervalForcibly 120秒 延迟
+     * @param cleanImmediately 是否强制启用
+     * @return
+     */
     public int deleteExpiredFileByTime(final long expiredTime,
         final int deleteFilesInterval,
         final long intervalForcibly,
         final boolean cleanImmediately,
         final int deleteFileBatchMax) {
+        //获取映射文件列表 commitlog文件可能随时有写入，copy一份不影响写入
         Object[] mfs = this.copyMappedFiles(0);
 
+        //如果映射文件列表为空直接返回
         if (null == mfs)
             return 0;
 
         int mfsLength = mfs.length - 1;
         int deleteCount = 0;
+        // 存放要删除的MappedFile
         List<MappedFile> files = new ArrayList<>();
         int skipFileNum = 0;
         if (null != mfs) {
             //do check before deleting
             checkSelf();
+            //对映射文件进行遍历
             for (int i = 0; i < mfsLength; i++) {
                 MappedFile mappedFile = (MappedFile) mfs[i];
+                //文件最后的修改时间 + 过期时间 = 文件最终能够存活的时间
                 long liveMaxTimestamp = mappedFile.getLastModifiedTimestamp() + expiredTime;
+                // 如果文件最新修改已经超过三天或者是磁盘空间达到85%以上  而要在此之前需要满足3个条件之一，时间，容量，和手动触发
                 if (System.currentTimeMillis() >= liveMaxTimestamp || cleanImmediately) {
                     if (skipFileNum > 0) {
                         log.info("Delete CommitLog {} but skip {} files", mappedFile.getFileName(), skipFileNum);
                     }
+                    //删除文件，就是解除对文件的引用
                     if (mappedFile.destroy(intervalForcibly)) {
+                        //要删除的的文件加入到要删除的集合中
                         files.add(mappedFile);
+                        //增加计数
                         deleteCount++;
 
                         if (files.size() >= deleteFileBatchMax) {
                             break;
                         }
 
+                        //如果删除时间间隔大于0，并且没有循环玩，则睡眠指定的删除间隔时长后在杀出
                         if (deleteFilesInterval > 0 && (i + 1) < mfsLength) {
                             try {
                                 Thread.sleep(deleteFilesInterval);
@@ -412,6 +429,7 @@ public class MappedFileQueue implements Swappable {
                             }
                         }
                     } else {
+                        // 避免在中间删除文件
                         break;
                     }
                 } else {
@@ -422,8 +440,10 @@ public class MappedFileQueue implements Swappable {
             }
         }
 
+        //从文件映射队列中删除对应的文件映射
         deleteExpiredFile(files);
 
+        //返回删除的文件个数
         return deleteCount;
     }
 

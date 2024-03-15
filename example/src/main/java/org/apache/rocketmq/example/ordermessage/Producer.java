@@ -42,7 +42,7 @@ public class Producer {
                         try {
                             int orderId = finalI % 10;
                             Message msg =
-                                    new Message("TopicTestjjj", tags[finalI % tags.length], "KEY" + finalI,
+                                    new Message("TopicTest", tags[finalI % tags.length], "KEY" + finalI,
                                             ("Hello RocketMQ " + finalI).getBytes(RemotingHelper.DEFAULT_CHARSET));
                             SendResult sendResult = producer.send(msg, new MessageQueueSelector() {
                                 @Override

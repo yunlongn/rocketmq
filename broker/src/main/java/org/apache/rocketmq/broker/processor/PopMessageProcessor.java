@@ -196,6 +196,13 @@ public class PopMessageProcessor implements NettyRequestProcessor {
     @Override
     public RemotingCommand processRequest(final ChannelHandlerContext ctx, RemotingCommand request)
         throws RemotingCommandException {
+        final long beginTimeMills = this.brokerController.getMessageStore().now();
+        request.addExtFieldIfNotExist(BORN_TIME, String.valueOf(System.currentTimeMillis()));
+        if (Objects.equals(request.getExtFields().get(BORN_TIME), "0")) {
+            request.addExtField(BORN_TIME, String.valueOf(System.currentTimeMillis()));
+        }
+        Channel channel = ctx.channel();
+
         // 创建服务器端对本请求的“响应对象”，注意：header 类型 PopMessageResponseHeader
         RemotingCommand response = RemotingCommand.createResponseCommand(PopMessageResponseHeader.class);
         // 获取response对象的 header
@@ -381,13 +388,9 @@ public class PopMessageProcessor implements NettyRequestProcessor {
             }
         }
         if (requestHeader.getQueueId() < 0) {
-            // read all queue
-            for (int i = 0; i < topicConfig.getReadQueueNums(); i++) {
-                int queueId = (randomQ + i) % topicConfig.getReadQueueNums();
-                // thenCompose 把所有的 queue 连接起来
-                getMessageFuture = getMessageFuture.thenCompose(restNum -> popMsgFromQueue(false, getMessageResult, requestHeader, queueId, restNum, reviveQid, channel, popTime, finalMessageFilter,
-                    startOffsetInfo, msgOffsetInfo, finalOrderCountInfo));
-            }
+            // read all queue 把所有的 queue 连接起来
+            getMessageFuture = popMsgFromTopic(topicConfig, false, getMessageResult, requestHeader, reviveQid, channel,
+                popTime, finalMessageFilter, startOffsetInfo, msgOffsetInfo, orderCountInfo, randomQ, getMessageFuture);
         } else {
             int queueId = requestHeader.getQueueId();
             getMessageFuture = getMessageFuture.thenCompose(restNum ->
@@ -513,9 +516,6 @@ public class PopMessageProcessor implements NettyRequestProcessor {
         PopMessageRequestHeader requestHeader, int queueId, long restNum, int reviveQid,
         Channel channel, long popTime, ExpressionMessageFilter messageFilter, StringBuilder startOffsetInfo,
         StringBuilder msgOffsetInfo, StringBuilder orderCountInfo) {
-        String topic = isRetry ? KeyBuilder.buildPopRetryTopic(requestHeader.getTopic(),
-            requestHeader.getConsumerGroup()) : requestHeader.getTopic();
-        // 当前线程 锁定当前的 queueId 这么只有一个消费者能消费到指定范围的数据
         String lockKey =
             topic + PopAckConstants.SPLIT + requestHeader.getConsumerGroup() + PopAckConstants.SPLIT + queueId;
         boolean isOrder = requestHeader.isOrder();
@@ -523,6 +523,13 @@ public class PopMessageProcessor implements NettyRequestProcessor {
             false, lockKey, false);
         CompletableFuture<Long> future = new CompletableFuture<>();
         if (!queueLockManager.tryLock(lockKey)) {
+            restNum = this.brokerController.getMessageStore().getMaxOffsetInQueue(topic, queueId) - offset + restNum;
+            future.complete(restNum);
+            return future;
+        }
+
+        if (isPopShouldStop(topic, requestHeader.getConsumerGroup(), queueId)) {
+            POP_LOGGER.warn("Too much msgs unacked, then stop poping. topic={}, group={}, queueId={}", topic, requestHeader.getConsumerGroup(), queueId);
             restNum = this.brokerController.getMessageStore().getMaxOffsetInQueue(topic, queueId) - offset + restNum;
             future.complete(restNum);
             return future;
@@ -613,7 +620,9 @@ public class PopMessageProcessor implements NettyRequestProcessor {
                             requestHeader.getConsumerGroup(), topic, queueId, finalOffset);
                     } else {
                         // Broker 收到消费者发来的 ACK 后，会把 CheckPoint 从缓存中移除。 否则加入重试队列
-                        appendCheckPoint(requestHeader, topic, reviveQid, queueId, finalOffset, result, popTime, this.brokerController.getBrokerConfig().getBrokerName());
+                        if (!appendCheckPoint(requestHeader, topic, reviveQid, queueId, finalOffset, result, popTime, this.brokerController.getBrokerConfig().getBrokerName())) {
+                            return atomicRestNum.get() + result.getMessageCount();
+                        }
                     }
                     ExtraInfoUtil.buildStartOffsetInfo(startOffsetInfo, topic, queueId, finalOffset);
                     ExtraInfoUtil.buildMsgOffsetInfo(msgOffsetInfo, topic, queueId,

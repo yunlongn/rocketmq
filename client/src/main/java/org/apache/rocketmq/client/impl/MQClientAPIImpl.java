@@ -847,28 +847,23 @@ public class MQClientAPIImpl implements NameServerUpdateCallback {
         final RemotingCommand request = RemotingCommand.createRequestCommand(RequestCode.POP_MESSAGE, requestHeader);
         this.remotingClient.invokeAsync(addr, request, timeoutMillis, new InvokeCallback() {
             @Override
-            public void onComplete(ResponseFuture responseFuture) {
-                RemotingCommand response = responseFuture.getResponseCommand();
-                if (response != null) {
-                    try {
-                        // 将返回的消息封装成 PopResult
-                        PopResult
-                            popResult = MQClientAPIImpl.this.processPopResponse(brokerName, response, requestHeader.getTopic(), requestHeader);
-                        assert popResult != null;
-                        popCallback.onSuccess(popResult);
-                    } catch (Exception e) {
-                        popCallback.onException(e);
-                    }
-                } else {
-                    if (!responseFuture.isSendRequestOK()) {
-                        popCallback.onException(new MQClientException(ClientErrorCode.CONNECT_BROKER_EXCEPTION, "send request failed to " + addr + ". Request: " + request, responseFuture.getCause()));
-                    } else if (responseFuture.isTimeout()) {
-                        popCallback.onException(new MQClientException(ClientErrorCode.ACCESS_BROKER_TIMEOUT, "wait response from " + addr + " timeout :" + responseFuture.getTimeoutMillis() + "ms" + ". Request: " + request,
-                            responseFuture.getCause()));
-                    } else {
-                        popCallback.onException(new MQClientException("unknown reason. addr: " + addr + ", timeoutMillis: " + timeoutMillis + ". Request: " + request, responseFuture.getCause()));
-                    }
+            public void operationComplete(ResponseFuture responseFuture) {
+
+            }
+
+            @Override
+            public void operationSucceed(RemotingCommand response) {
+                try {
+                    // 将返回的消息封装成 PopResult
+                    PopResult popResult = MQClientAPIImpl.this.processPopResponse(brokerName, response, requestHeader.getTopic(), requestHeader);
+                    popCallback.onSuccess(popResult);
+                } catch (Exception e) {
+                    popCallback.onException(e);
                 }
+            }
+            @Override
+            public void operationFail(Throwable throwable) {
+                popCallback.onException(throwable);
             }
         });
     }

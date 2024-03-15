@@ -826,6 +826,7 @@ public class DefaultMessageStore implements MessageStore {
 
             // 最大的Offset为0
             if (maxOffset == 0) {
+//                System.out.println("last ConsumeQueueInterface group " + group + " topic " + topic + " queueId " + queueId + " offset " + offset + " consumeQueue " + consumeQueue);
                 status = GetMessageStatus.NO_MESSAGE_IN_QUEUE;
                 nextBeginOffset = nextOffsetCorrection(offset, 0);
             } else if (offset < minOffset) {
@@ -833,6 +834,7 @@ public class DefaultMessageStore implements MessageStore {
                 status = GetMessageStatus.OFFSET_TOO_SMALL;
                 nextBeginOffset = nextOffsetCorrection(offset, minOffset);
             } else if (offset == maxOffset) {
+//                System.out.println("last ConsumeQueueInterface group " + group + " topic " + topic + " queueId " + queueId + " offset " + offset + " consumeQueue " + consumeQueue);
                 // 查找的消息 offset 在临界最大值。 溢出
                 status = GetMessageStatus.OFFSET_OVERFLOW_ONE;
                 nextBeginOffset = nextOffsetCorrection(offset, offset);
@@ -841,6 +843,8 @@ public class DefaultMessageStore implements MessageStore {
                 status = GetMessageStatus.OFFSET_OVERFLOW_BADLY;
                 nextBeginOffset = nextOffsetCorrection(offset, maxOffset);
             } else {
+                System.out.println("ConsumeQueueInterface group " + group + " topic " + topic + " queueId " + queueId + " offset " + offset + " consumeQueue " + consumeQueue);
+                // 命中 consumeQueue 获取指定 offset 的值
                 final int maxFilterMessageSize = Math.max(this.messageStoreConfig.getMaxFilterMessageSize(), maxMsgNums * consumeQueue.getUnitSize());
                 final boolean diskFallRecorded = this.messageStoreConfig.isDiskFallRecorded();
 

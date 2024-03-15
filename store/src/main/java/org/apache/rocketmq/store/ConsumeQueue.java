@@ -693,6 +693,10 @@ public class ConsumeQueue implements ConsumeQueueInterface, FileQueueLifeCycle {
                         topic, queueId, request.getCommitLogOffset());
                 }
             }
+
+            MappedFile mappedFile = this.mappedFileQueue.getLastMappedFile(request.getConsumeQueueOffset() * CQ_STORE_UNIT_SIZE);
+            System.out.println("WROTE_POSITION " + mappedFile.getWrotePosition() + " mappedFileQueue.storePath " + this.mappedFileQueue.storePath + " commitLogOffset: "
+                    + request.getCommitLogOffset() + " MsgSize: " + request.getMsgSize() + " tagsCode: " + tagsCode);
             boolean result = this.putMessagePositionInfo(request.getCommitLogOffset(),
                 request.getMsgSize(), tagsCode, request.getConsumeQueueOffset());
             if (result) {

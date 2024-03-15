@@ -189,6 +189,7 @@ public class DefaultPullMessageResultHandler implements PullMessageResultHandler
                 // 条件成立：说明本次请求允许长轮询
                 // （注意brokerAllowSuspend，它是由重载的方法 传的 true，当长轮询结束时 再次 执行 processRequest的时候，该参数传的是 false）
                 // 也就是每次pull请求，至多在服务器端 长轮询 控制一次
+                // hasSuspendFlag, 构建消息拉取时的拉取标记，默认为true
                 if (brokerAllowSuspend && hasSuspendFlag) {
                     // 获取长轮询时间 15000 毫秒
                     long pollingTimeMills = suspendTimeoutMillisLong;

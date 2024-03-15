@@ -22,18 +22,16 @@ import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.client.consumer.DefaultMQPushConsumer;
 import org.apache.rocketmq.common.message.MessageAccessor;
 import org.apache.rocketmq.common.message.MessageConst;
 import org.apache.rocketmq.common.message.MessageExt;
-import org.apache.rocketmq.remoting.protocol.body.ProcessQueueInfo;
 import org.apache.rocketmq.logging.org.slf4j.Logger;
 import org.apache.rocketmq.logging.org.slf4j.LoggerFactory;
+import org.apache.rocketmq.remoting.protocol.body.ProcessQueueInfo;
 
 /**
  * Queue consumption snapshot
@@ -62,7 +60,7 @@ public class ProcessQueue {
      * 整个ProcessQueue处理单元的总消息长度
      */
     private final AtomicLong msgSize = new AtomicLong();
-    private final Lock consumeLock = new ReentrantLock();
+    private final ReadWriteLock consumeLock = new ReentrantReadWriteLock();
     /**
      * A subset of msgTreeMap, will only be used when orderly consume
      * 一个临时的TreeMap，仅在顺序消费模式下使用
@@ -104,7 +102,7 @@ public class ProcessQueue {
      */
     public void cleanExpiredMsg(DefaultMQPushConsumer pushConsumer) {
         // 顺序消费时，直接返回
-        if (pushConsumer.getDefaultMQPushConsumerImpl().isConsumeOrderly()) {
+        if (pushConsumer.isConsumeOrderly()) {
             return;
         }
 
@@ -254,10 +252,12 @@ public class ProcessQueue {
                         MessageExt prev = msgTreeMap.remove(msg.getQueueOffset());
                         if (prev != null) {
                             removedCnt--;
-                            msgSize.addAndGet(0 - msg.getBody().length);
+                            msgSize.addAndGet(-msg.getBody().length);
                         }
                     }
-                    msgCount.addAndGet(removedCnt);
+                    if (msgCount.addAndGet(removedCnt) == 0) {
+                        msgSize.set(0);
+                    }
 
                     if (!msgTreeMap.isEmpty()) {
                         result = msgTreeMap.firstKey();
@@ -320,9 +320,12 @@ public class ProcessQueue {
             this.treeMapLock.writeLock().lockInterruptibly();
             try {
                 Long offset = this.consumingMsgOrderlyTreeMap.lastKey();
-                msgCount.addAndGet(0 - this.consumingMsgOrderlyTreeMap.size());
-                for (MessageExt msg : this.consumingMsgOrderlyTreeMap.values()) {
-                    msgSize.addAndGet(0 - msg.getBody().length);
+                if (msgCount.addAndGet(-this.consumingMsgOrderlyTreeMap.size()) == 0) {
+                    msgSize.set(0);
+                } else {
+                    for (MessageExt msg : this.consumingMsgOrderlyTreeMap.values()) {
+                        msgSize.addAndGet(-msg.getBody().length);
+                    }
                 }
                 this.consumingMsgOrderlyTreeMap.clear();
                 if (offset != null) {
@@ -446,7 +449,7 @@ public class ProcessQueue {
         this.lastLockTimestamp = lastLockTimestamp;
     }
 
-    public Lock getConsumeLock() {
+    public ReadWriteLock getConsumeLock() {
         return consumeLock;
     }
 
@@ -482,8 +485,8 @@ public class ProcessQueue {
                 info.setCachedMsgMinOffset(this.msgTreeMap.firstKey());
                 info.setCachedMsgMaxOffset(this.msgTreeMap.lastKey());
                 info.setCachedMsgCount(this.msgTreeMap.size());
-                info.setCachedMsgSizeInMiB((int) (this.msgSize.get() / (1024 * 1024)));
             }
+            info.setCachedMsgSizeInMiB((int) (this.msgSize.get() / (1024 * 1024)));
 
             if (!this.consumingMsgOrderlyTreeMap.isEmpty()) {
                 info.setTransactionMsgMinOffset(this.consumingMsgOrderlyTreeMap.firstKey());

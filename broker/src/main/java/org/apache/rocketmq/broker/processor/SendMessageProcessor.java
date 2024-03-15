@@ -18,16 +18,12 @@ package org.apache.rocketmq.broker.processor;
 
 import io.netty.channel.ChannelHandlerContext;
 import io.opentelemetry.api.common.Attributes;
-import java.nio.ByteBuffer;
-import java.util.Map;
-import java.util.Objects;
-import java.util.Optional;
-import java.util.concurrent.CompletableFuture;
 import org.apache.commons.lang3.StringUtils;
 import org.apache.rocketmq.broker.BrokerController;
 import org.apache.rocketmq.broker.metrics.BrokerMetricsManager;
 import org.apache.rocketmq.broker.mqtrace.SendMessageContext;
 import org.apache.rocketmq.common.AbortProcessException;
+import org.apache.rocketmq.common.KeyBuilder;
 import org.apache.rocketmq.common.MQVersion;
 import org.apache.rocketmq.common.MixAll;
 import org.apache.rocketmq.common.TopicConfig;
@@ -47,6 +43,7 @@ import org.apache.rocketmq.common.message.MessageExtBrokerInner;
 import org.apache.rocketmq.common.sysflag.MessageSysFlag;
 import org.apache.rocketmq.common.topic.TopicValidator;
 import org.apache.rocketmq.common.utils.CleanupPolicyUtils;
+import org.apache.rocketmq.common.utils.MessageUtils;
 import org.apache.rocketmq.common.utils.QueueTypeUtils;
 import org.apache.rocketmq.remoting.exception.RemotingCommandException;
 import org.apache.rocketmq.remoting.netty.NettyRequestProcessor;
@@ -63,9 +60,16 @@ import org.apache.rocketmq.store.AppendMessageResult;
 import org.apache.rocketmq.store.DefaultMessageStore;
 import org.apache.rocketmq.store.MessageStore;
 import org.apache.rocketmq.store.PutMessageResult;
+import org.apache.rocketmq.store.PutMessageStatus;
 import org.apache.rocketmq.store.config.BrokerRole;
 import org.apache.rocketmq.store.config.StorePathConfigHelper;
 import org.apache.rocketmq.store.stats.BrokerStatsManager;
+
+import java.nio.ByteBuffer;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import static org.apache.rocketmq.broker.metrics.BrokerMetricsConstant.LABEL_CONSUMER_GROUP;
 import static org.apache.rocketmq.broker.metrics.BrokerMetricsConstant.LABEL_IS_SYSTEM;
@@ -109,6 +113,8 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 }
 
                 RemotingCommand response;
+                clearReservedProperties(requestHeader);
+
                 // 是否为批量的消息
                 if (requestHeader.isBatch()) {
                     // 处理多个消息
@@ -135,6 +141,12 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         }
 
         return false;
+    }
+
+    private void clearReservedProperties(SendMessageRequestHeader requestHeader) {
+        String properties = requestHeader.getProperties();
+        properties = MessageUtils.deleteProperty(properties, MessageConst.PROPERTY_POP_CK);
+        requestHeader.setProperties(properties);
     }
 
     /**
@@ -177,7 +189,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
         // 判断是否包含重试topic前缀(%RETRY%)
         if (null != newTopic && newTopic.startsWith(MixAll.RETRY_GROUP_TOPIC_PREFIX)) {
             // 消费组
-            String groupName = newTopic.substring(MixAll.RETRY_GROUP_TOPIC_PREFIX.length());
+            String groupName = KeyBuilder.parseGroup(newTopic);
             // 获取订阅组配置
             SubscriptionGroupConfig subscriptionGroupConfig =
                 this.brokerController.getSubscriptionGroupManager().findSubscriptionGroupConfig(groupName);
@@ -195,9 +207,17 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 maxReconsumeTimes = requestHeader.getMaxReconsumeTimes();
             }
             int reconsumeTimes = requestHeader.getReconsumeTimes() == null ? 0 : requestHeader.getReconsumeTimes();
-            // Using '>' instead of '>=' to compatible with the case that reconsumeTimes here are increased by client.
+
+            boolean sendRetryMessageToDeadLetterQueueDirectly = false;
+            if (!brokerController.getRebalanceLockManager().isLockAllExpired(groupName)) {
+                LOGGER.info("Group has unexpired lock record, which show it is ordered message, send it to DLQ "
+                        + "right now group={}, topic={}, reconsumeTimes={}, maxReconsumeTimes={}.", groupName,
+                    newTopic, reconsumeTimes, maxReconsumeTimes);
+                sendRetryMessageToDeadLetterQueueDirectly = true;
+            }
+
             // 条件满足，则已经达到最大重试次数16
-            if (reconsumeTimes > maxReconsumeTimes) {
+            if (reconsumeTimes > maxReconsumeTimes || sendRetryMessageToDeadLetterQueueDirectly) {
                 Attributes attributes = BrokerMetricsManager.newAttributesBuilder()
                     .put(LABEL_CONSUMER_GROUP, requestHeader.getProducerGroup())
                     .put(LABEL_TOPIC, requestHeader.getTopic())
@@ -299,7 +319,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
 
         // Map<String, String> oriProps = MessageDecoder.string2messageProperties(requestHeader.getProperties());
         String traFlag = oriProps.get(MessageConst.PROPERTY_TRANSACTION_PREPARED);
-        boolean sendTransactionPrepareMessage = false;
+        boolean sendTransactionPrepareMessage;
         if (Boolean.parseBoolean(traFlag)
             && !(msgInner.getReconsumeTimes() > 0 && msgInner.getDelayTimeLevel() > 0)) { //For client under version 4.6.1
             if (this.brokerController.getBrokerConfig().isRejectTransactionMessage()) {
@@ -310,6 +330,8 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 return response;
             }
             sendTransactionPrepareMessage = true;
+        } else {
+            sendTransactionPrepareMessage = false;
         }
 
         long beginTimeMillis = this.brokerController.getMessageStore().now();
@@ -332,6 +354,12 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 if (responseFuture != null) {
                     doResponse(ctx, request, responseFuture);
                 }
+
+                // record the transaction metrics, responseFuture == null means put successfully
+                if (sendTransactionPrepareMessage && (responseFuture == null || responseFuture.getCode() == ResponseCode.SUCCESS)) {
+                    this.brokerController.getTransactionalMessageService().getTransactionMetrics().addAndGet(msgInner.getProperty(MessageConst.PROPERTY_REAL_TOPIC), 1);
+                }
+
                 sendMessageCallback.onComplete(sendMessageContext, response);
             }, this.brokerController.getPutMessageFutureExecutor());
             // Returns null to release the send message thread
@@ -344,6 +372,10 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 putMessageResult = this.brokerController.getMessageStore().putMessage(msgInner);
             }
             handlePutMessageResult(putMessageResult, response, request, msgInner, responseHeader, sendMessageContext, ctx, queueIdInt, beginTimeMillis, mappingContext, BrokerMetricsManager.getMessageType(requestHeader));
+            // record the transaction metrics
+            if (putMessageResult.getPutMessageStatus() == PutMessageStatus.PUT_OK && putMessageResult.getAppendMessageResult().isOk()) {
+                this.brokerController.getTransactionalMessageService().getTransactionMetrics().addAndGet(msgInner.getProperty(MessageConst.PROPERTY_REAL_TOPIC), 1);
+            }
             sendMessageCallback.onComplete(sendMessageContext, response);
             return response;
         }
@@ -408,6 +440,7 @@ public class SendMessageProcessor extends AbstractSendMessageProcessor implement
                 response.setCode(ResponseCode.SYSTEM_ERROR);
                 response.setRemark(String.format("accurate timer message is not enabled, timerWheelEnable is %s",
                      this.brokerController.getMessageStoreConfig().isTimerWheelEnable()));
+                break;
             case SERVICE_NOT_AVAILABLE:
                 response.setCode(ResponseCode.SERVICE_NOT_AVAILABLE);
                 response.setRemark(

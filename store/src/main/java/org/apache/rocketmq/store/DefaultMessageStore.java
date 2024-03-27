@@ -843,7 +843,7 @@ public class DefaultMessageStore implements MessageStore {
                 status = GetMessageStatus.OFFSET_OVERFLOW_BADLY;
                 nextBeginOffset = nextOffsetCorrection(offset, maxOffset);
             } else {
-                System.out.println("ConsumeQueueInterface group " + group + " topic " + topic + " queueId " + queueId + " offset " + offset + " consumeQueue " + consumeQueue);
+//                System.out.println("ConsumeQueueInterface group " + group + " topic " + topic + " queueId " + queueId + " offset " + offset + " consumeQueue " + consumeQueue);
                 // 命中 consumeQueue 获取指定 offset 的值
                 final int maxFilterMessageSize = Math.max(this.messageStoreConfig.getMaxFilterMessageSize(), maxMsgNums * consumeQueue.getUnitSize());
                 final boolean diskFallRecorded = this.messageStoreConfig.isDiskFallRecorded();
